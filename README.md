@@ -1,7 +1,7 @@
-# metro-lang —— MetroLang 编译器 / 反编译器 / 地图 / 路线查询
+# MetroLang 语言
 
-地铁线网**数据语言** MetroLang 的完整工具链：把线路数据编译成 JSON、把 JSON
-反编译回 MetroLang、渲染自包含 HTML/SVG 地图，并在站点/线路图上查最短时间路径。
+MetroLang 是一门描述地铁线网的**数据语言**，配有把线路数据编译成 JSON、反编译回 MetroLang、渲染自包含 HTML/SVG 地图并查询最短时间路径的完整工具链。
+
 前端由本仓库的 `metrolang.gram` 经 [ParseEngine](https://gitee.com/rabbitc999/ParseEngine)
 文法生成器产出，产物是一个可执行文件 `metro-lang`。
 
