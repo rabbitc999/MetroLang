@@ -1,0 +1,28 @@
+{
+  "name": "MetroLang",
+  "scopeName": "source.metro-lang",
+  "patterns": [
+    { "name": "comment.line.number-sign.metro-lang", "match": "#.*$" },
+    { "name": "string.quoted.single.metro-lang", "begin": "'", "end": "'", "patterns": [{ "name": "constant.character.escape.metro-lang", "match": "\\." }] },
+    { "name": "string.quoted.double.metro-lang", "begin": "\"", "end": "\"", "patterns": [{ "name": "constant.character.escape.metro-lang", "match": "\\." }] },
+    { "name": "keyword.control.preprocessor.metro-lang", "match": "(?i)^\\s*%(?:define|undefine|if|else|endif|include|import)\\b" },
+    { "name": "keyword.control.definition.metro-lang", "match": "(?i)\\b(?:VIRTUAL_TRANSFER_DEFINE|DIRECTION_TEMPLATE|SPEED_LIMIT_DEFINE|BACKGROUND_DEFINE|DWELL_TIME_DEFINE|DIRECTION_DEFINE|DIRECTION_MODIFY|OPERATION_DEFINE|PROMOTION_DEFINE|FACILITY_DEFINE|HEADWAY_PROFILE|OPERATOR_DEFINE|TRANSFER_DEFINE|PROGRAM_DEFINE|SPECIAL_DEFINE|STATION_DEFINE|STATION_MODIFY|CROWD_PROFILE|LINE_TEMPLATE|TRANSFER_TYPE|LABEL_DEFINE|PRICE_DEFINE|LINE_DEFINE|LINE_MODIFY|ZONE_DEFINE|ATTRIBUTES|POLICY)\\b" },
+    { "name": "keyword.control.end.metro-lang", "match": "(?i)\\b(?:END_ATTRIBUTES|END_DEFINE|END_POLICY)\\b" },
+    { "name": "constant.language.metro-lang", "match": "(?i)\\b(?:AUTO|NIL|SAME|TRUE|FALSE)\\b" },
+    { "name": "keyword.other.metro-lang", "match": "(?i)\\b(?:ACCESSIBLE_TOILET|APPLICABLE_LINES|AVG_BOARD_TIME|ACCESSIBLE|BASE_FARE|AVG_RENT|ASSERT|AUTHOR|BOUNDS|CENTER|BRAKE|COLOR|CITY|ADD|ALL|AT)\\b" },
+    { "name": "keyword.other.metro-lang", "match": "(?i)\\b(?:DIRECTION_DELETE|DIRECTION_RENAME|CONNECT_STATION|DIRECTION_COPY|DEFAULT_FARE|CREATE_DATE|DESCRIPTION|DIRECTION|CURRENCY|COUNTRY|DELETE|COORD|CROWD|DEPOT|COPY|DAYS)\\b" },
+    { "name": "keyword.other.metro-lang", "match": "(?i)\\b(?:DIRECTION_REVERSE|DIRECTION_SPLIT|DISCOUNT_AMOUNT|DIRECTION_TYPE|EXPRESS_STOPS|DWELL_TIME|ENTRY_TIME|ESCALATOR|DISABLED|DISTANCE|ELEVATOR|DISABLE|ENABLED|EN_NAME|DWELL|ECHO)\\b" },
+    { "name": "keyword.other.metro-lang", "match": "(?i)\\b(?:FIXED_DISCOUNT|KEEP_ORIGINAL|GEN_TRANSFER|FORMATION|IS_FUTURE|FARE_CAP|INHERITS|KEY_CITY|FOUNDED|HEADWAY|HOTLINE|FUTURE|GENDER|FIXED|IMAGE|INTO)\\b" },
+    { "name": "keyword.other.metro-lang", "match": "(?i)\\b(?:LINEAR_EXTENSION|LINE_DELETE|LINE_RENAME|LINE_MERGE|LINE_COPY|LOCATION|MAXSPEED|MESSAGE|LINES|MERGE|LINE|LINK|LOGO|LOOP|NAME|NODE)\\b" },
+    { "name": "keyword.other.metro-lang", "match": "(?i)\\b(?:OUT_STATION_TRANSFER_TIME|POPULATION_DENSITY|PLATFORM_COORD|OTHER_NAMES|OTHER_CITY|OTHER_NAME|PEAK_HOURS|OPEN_TIME|OPEN_YEAR|POSITION|QUANTITY|OPACITY|PENDING|POLYGON|PERIOD|POWER)\\b" },
+    { "name": "keyword.other.metro-lang", "match": "(?i)\\b(?:SECURITY_CHECK|SEGMENT_TYPE|SPECIAL_LINE|RATE_PER_KM|SPEED_LIMIT|SHORT_NAME|REVERSE|ROUTING|SEGMENT|SPECIAL|RADIUS|REMOVE|RENAME|REV|SET|SRC)\\b" },
+    { "name": "keyword.other.metro-lang", "match": "(?i)\\b(?:TRANSFER_DISCOUNT|STATION_DELETE|STATION_RENAME|STATION_STATUS|TACTILE_PAVING|STATION_COPY|STATION_MODE|TIME_MINUTES|TIME_LIMIT|TIME_RANGE|THRESHOLD|STATIONS|TRANSFER|STATUS|TOILET|TIME)\\b" },
+    { "name": "keyword.other.metro-lang", "match": "(?i)\\b(?:UPDATE_EXISTING|VIA_DIRECTIONS|TRANSFER_TIME|UPDATE_DATE|WALK_SPEED|WIDE_GATE|VERSION|WEBSITE|VALUE|TYPE|VIA)\\b" },
+    { "name": "keyword.operator.wildcard.metro-lang", "match": "\\*" },
+    { "name": "keyword.operator.metro-lang", "match": "==|!=|<=|>=|<|>|=" },
+    { "name": "constant.numeric.metro-lang", "match": "\\b\\d+(?:\\.\\d+)?\\b" },
+    { "name": "punctuation.section.brackets.metro-lang", "match": "[\\[\\]]" },
+    { "name": "punctuation.section.parens.metro-lang", "match": "[()]" },
+    { "name": "punctuation.separator.metro-lang", "match": "[:,]" }
+  ]
+}

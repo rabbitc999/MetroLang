@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1560" height="900" viewBox="0 0 1560 900">
+  <rect width="1560" height="900" fill="#f4f7fb"/>
+  <text x="40" y="58" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="31" font-weight="700" fill="#10233f">MetroLang · 线网 DSL 与工具链总览</text>
+  <text x="40" y="88" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="15" fill="#4a5b73">根目录独立工程 · 文法 / 编译 / 反编译与地图 / 路线查询四层</text>
+  <rect x="40" y="118" width="360" height="700" rx="14" fill="#ffffff" stroke="#d8e1ee" stroke-width="1.5"/>
+  <text x="58" y="148" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="17" font-weight="700" fill="#14507e">① 文法与解析</text>
+  <text x="58" y="170" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f">metro-lang/metrolang.gram · include/</text>
+  <text x="58" y="202" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="13" font-weight="700" fill="#10233f">词法层</text>
+  <rect x="58" y="216" width="324" height="52" rx="8" fill="#f7f9fc" stroke="#e2e9f3" stroke-width="1"/>
+  <text x="69" y="237" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="12" font-weight="700" fill="#14507e">关键字 Token</text>
+  <text x="69" y="257" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f">169 个关键字各占一个 %token</text>
+  <rect x="58" y="278" width="324" height="52" rx="8" fill="#f7f9fc" stroke="#e2e9f3" stroke-width="1"/>
+  <text x="69" y="299" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="12" font-weight="700" fill="#14507e">字面量</text>
+  <text x="69" y="319" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f">字符串 / 数字 / 标识符：%token regex · %identifier</text>
+  <rect x="58" y="340" width="324" height="52" rx="8" fill="#f7f9fc" stroke="#e2e9f3" stroke-width="1"/>
+  <text x="69" y="361" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="12" font-weight="700" fill="#14507e">注释与空白</text>
+  <text x="69" y="381" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f"># 到行尾走 %trivia；空白走 %space</text>
+  <text x="58" y="416" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="13" font-weight="700" fill="#10233f">文法结构</text>
+  <rect x="58" y="430" width="324" height="52" rx="8" fill="#f7f9fc" stroke="#e2e9f3" stroke-width="1"/>
+  <text x="69" y="451" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="12" font-weight="700" fill="#14507e">块与单行命令</text>
+  <text x="69" y="471" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f">命令 … END_DEFINE；块内顺序自由、可嵌套</text>
+  <rect x="58" y="492" width="324" height="52" rx="8" fill="#f7f9fc" stroke="#e2e9f3" stroke-width="1"/>
+  <text x="69" y="513" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="12" font-weight="700" fill="#14507e">显式产生式</text>
+  <text x="69" y="533" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f">文档 / 块 / 语句 / 参数 / 列表都写产生式</text>
+  <text x="58" y="568" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="13" font-weight="700" fill="#10233f">分析器</text>
+  <rect x="58" y="582" width="324" height="52" rx="8" fill="#f7f9fc" stroke="#e2e9f3" stroke-width="1"/>
+  <text x="69" y="603" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="12" font-weight="700" fill="#14507e">LALR(1) 解析器</text>
+  <text x="69" y="623" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f">由 ParseEngine 生成，零冲突</text>
+  <rect x="58" y="644" width="324" height="52" rx="8" fill="#f7f9fc" stroke="#e2e9f3" stroke-width="1"/>
+  <text x="69" y="665" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="12" font-weight="700" fill="#14507e">驱动内嵌</text>
+  <text x="69" y="685" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f">%epilogue：块栈 / 逐行折叠 / runText</text>
+  <rect x="58" y="706" width="324" height="52" rx="8" fill="#f7f9fc" stroke="#e2e9f3" stroke-width="1"/>
+  <text x="69" y="727" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="12" font-weight="700" fill="#14507e">空行与注释行</text>
+  <text x="69" y="747" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f">块成员循环显式接受 NL</text>
+  <rect x="410" y="118" width="360" height="700" rx="14" fill="#ffffff" stroke="#d8e1ee" stroke-width="1.5"/>
+  <text x="428" y="148" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="17" font-weight="700" fill="#14507e">② 编译管线</text>
+  <text x="428" y="170" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f">metro-lang/src · preprocess/</text>
+  <text x="428" y="202" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="13" font-weight="700" fill="#10233f">预处理（preprocess/）</text>
+  <rect x="428" y="216" width="324" height="52" rx="8" fill="#f7f9fc" stroke="#e2e9f3" stroke-width="1"/>
+  <text x="439" y="237" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="12" font-weight="700" fill="#14507e">条件编译</text>
+  <text x="439" y="257" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f">%DEFINE / %UNDEFINE / %IF / %ELSE / %ENDIF</text>
+  <rect x="428" y="278" width="324" height="52" rx="8" fill="#f7f9fc" stroke="#e2e9f3" stroke-width="1"/>
+  <text x="439" y="299" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="12" font-weight="700" fill="#14507e">包含</text>
+  <text x="439" y="319" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f">%INCLUDE 'x'：嵌入外部文件、自动防循环</text>
+  <rect x="428" y="340" width="324" height="52" rx="8" fill="#f7f9fc" stroke="#e2e9f3" stroke-width="1"/>
+  <text x="439" y="361" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="12" font-weight="700" fill="#14507e">导入</text>
+  <text x="439" y="381" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f">%IMPORT 'x.csv' AS STATIONS → NODE</text>
+  <text x="428" y="416" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="13" font-weight="700" fill="#10233f">数据接入</text>
+  <rect x="428" y="430" width="324" height="52" rx="8" fill="#f7f9fc" stroke="#e2e9f3" stroke-width="1"/>
+  <text x="439" y="451" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="12" font-weight="700" fill="#14507e">CSV → 站点</text>
+  <text x="439" y="471" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f">站名 / 经度 / 纬度（城市可选）</text>
+  <rect x="428" y="492" width="324" height="52" rx="8" fill="#f7f9fc" stroke="#e2e9f3" stroke-width="1"/>
+  <text x="439" y="513" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="12" font-weight="700" fill="#14507e">简写规范化</text>
+  <text x="439" y="533" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f">一行式 DIRECTION_DEFINE 先拆成块</text>
+  <text x="428" y="568" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="13" font-weight="700" fill="#10233f">产物</text>
+  <rect x="428" y="582" width="324" height="52" rx="8" fill="#f7f9fc" stroke="#e2e9f3" stroke-width="1"/>
+  <text x="439" y="603" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="12" font-weight="700" fill="#14507e">JSON v2</text>
+  <text x="439" y="623" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f">stations 数组 / 无障碍内联 / 编组链接数组</text>
+  <rect x="428" y="644" width="324" height="52" rx="8" fill="#f7f9fc" stroke="#e2e9f3" stroke-width="1"/>
+  <text x="439" y="665" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="12" font-weight="700" fill="#14507e">兼容 v1</text>
+  <text x="439" y="685" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f">读取端兼容字典与单字符串写法</text>
+  <rect x="428" y="706" width="324" height="52" rx="8" fill="#f7f9fc" stroke="#e2e9f3" stroke-width="1"/>
+  <text x="439" y="727" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="12" font-weight="700" fill="#14507e">往返幂等</text>
+  <text x="439" y="747" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f">compile → decompile → compile 逐字段一致</text>
+  <rect x="780" y="118" width="360" height="700" rx="14" fill="#ffffff" stroke="#d8e1ee" stroke-width="1.5"/>
+  <text x="798" y="148" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="17" font-weight="700" fill="#14507e">③ 反编译与地图</text>
+  <text x="798" y="170" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f">metro-lang/src · template/templates/</text>
+  <text x="798" y="202" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="13" font-weight="700" fill="#10233f">模板化反编译</text>
+  <rect x="798" y="216" width="324" height="52" rx="8" fill="#f7f9fc" stroke="#e2e9f3" stroke-width="1"/>
+  <text x="809" y="237" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="12" font-weight="700" fill="#14507e">模板固化</text>
+  <text x="809" y="257" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f">*.tmpl 构建期内嵌，运行时不读磁盘</text>
+  <rect x="798" y="278" width="324" height="52" rx="8" fill="#f7f9fc" stroke="#e2e9f3" stroke-width="1"/>
+  <text x="809" y="299" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="12" font-weight="700" fill="#14507e">渲染链</text>
+  <text x="809" y="319" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f">模型 → tmpl::Value → 模板 → .metro</text>
+  <rect x="798" y="340" width="324" height="52" rx="8" fill="#f7f9fc" stroke="#e2e9f3" stroke-width="1"/>
+  <text x="809" y="361" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="12" font-weight="700" fill="#14507e">原文保留</text>
+  <text x="809" y="381" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f">未建模块留在 raw，反编译原样写回</text>
+  <text x="798" y="416" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="13" font-weight="700" fill="#10233f">线网地图</text>
+  <rect x="798" y="430" width="324" height="52" rx="8" fill="#f7f9fc" stroke="#e2e9f3" stroke-width="1"/>
+  <text x="809" y="451" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="12" font-weight="700" fill="#14507e">HTML 地图</text>
+  <text x="809" y="471" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f">自包含 SVG：只画线路 / 换乘 / 无障碍</text>
+  <rect x="798" y="492" width="324" height="52" rx="8" fill="#f7f9fc" stroke="#e2e9f3" stroke-width="1"/>
+  <text x="809" y="513" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="12" font-weight="700" fill="#14507e">导出</text>
+  <text x="809" y="533" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f">tools/export_svg.py；make svg 重生成</text>
+  <text x="798" y="568" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="13" font-weight="700" fill="#10233f">交互式查看器</text>
+  <rect x="798" y="582" width="324" height="52" rx="8" fill="#f7f9fc" stroke="#e2e9f3" stroke-width="1"/>
+  <text x="809" y="603" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="12" font-weight="700" fill="#14507e">map_view/</text>
+  <text x="809" y="623" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f">缩放 / 悬停看站点 / 点图例筛线路</text>
+  <rect x="798" y="644" width="324" height="52" rx="8" fill="#f7f9fc" stroke="#e2e9f3" stroke-width="1"/>
+  <text x="809" y="665" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="12" font-weight="700" fill="#14507e">双格式</text>
+  <text x="809" y="685" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f">载入 metro-lang JSON 或编辑器 JSON</text>
+  <rect x="798" y="706" width="324" height="52" rx="8" fill="#f7f9fc" stroke="#e2e9f3" stroke-width="1"/>
+  <text x="809" y="727" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="12" font-weight="700" fill="#14507e">解释器位置</text>
+  <text x="809" y="747" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f">界面上指定 metro-lang 可执行文件</text>
+  <rect x="1150" y="118" width="360" height="700" rx="14" fill="#ffffff" stroke="#d8e1ee" stroke-width="1.5"/>
+  <text x="1168" y="148" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="17" font-weight="700" fill="#14507e">④ 查询与验收</text>
+  <text x="1168" y="170" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f">metro-lang/src/route.cpp · samples/</text>
+  <text x="1168" y="202" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="13" font-weight="700" fill="#10233f">路线查询</text>
+  <rect x="1168" y="216" width="324" height="52" rx="8" fill="#f7f9fc" stroke="#e2e9f3" stroke-width="1"/>
+  <text x="1179" y="237" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="12" font-weight="700" fill="#14507e">最短路</text>
+  <text x="1179" y="257" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f">站点 / 线路图上的 Dijkstra</text>
+  <rect x="1168" y="278" width="324" height="52" rx="8" fill="#f7f9fc" stroke="#e2e9f3" stroke-width="1"/>
+  <text x="1179" y="299" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="12" font-weight="700" fill="#14507e">权重</text>
+  <text x="1179" y="319" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f">区间运行时间 segmentRunTimeSeconds</text>
+  <rect x="1168" y="340" width="324" height="52" rx="8" fill="#f7f9fc" stroke="#e2e9f3" stroke-width="1"/>
+  <text x="1179" y="361" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="12" font-weight="700" fill="#14507e">时间模型</text>
+  <text x="1179" y="381" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f">牵引 → 巡航 → 惰行 → 制动；Davis 阻力</text>
+  <text x="1168" y="416" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="13" font-weight="700" fill="#10233f">样例与规模</text>
+  <rect x="1168" y="430" width="324" height="52" rx="8" fill="#f7f9fc" stroke="#e2e9f3" stroke-width="1"/>
+  <text x="1179" y="451" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="12" font-weight="700" fill="#14507e">真实样例</text>
+  <text x="1179" y="471" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f">北京 / 上海 / 广州 / 深圳 / 合肥 / 南京</text>
+  <rect x="1168" y="492" width="324" height="52" rx="8" fill="#f7f9fc" stroke="#e2e9f3" stroke-width="1"/>
+  <text x="1179" y="513" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="12" font-weight="700" fill="#14507e">规模</text>
+  <text x="1179" y="533" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f">北京 1350 行 · 455 站 · 66 方向</text>
+  <text x="1168" y="568" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="13" font-weight="700" fill="#10233f">验收</text>
+  <rect x="1168" y="582" width="324" height="52" rx="8" fill="#f7f9fc" stroke="#e2e9f3" stroke-width="1"/>
+  <text x="1179" y="603" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="12" font-weight="700" fill="#14507e">构建</text>
+  <text x="1179" y="623" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f">make -C metro-lang / gen / check</text>
+  <rect x="1168" y="644" width="324" height="52" rx="8" fill="#f7f9fc" stroke="#e2e9f3" stroke-width="1"/>
+  <text x="1179" y="665" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="12" font-weight="700" fill="#14507e">全链路</text>
+  <text x="1179" y="685" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f">compile → JSON → decompile → HTML → route</text>
+  <rect x="1168" y="706" width="324" height="52" rx="8" fill="#f7f9fc" stroke="#e2e9f3" stroke-width="1"/>
+  <text x="1179" y="727" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="12" font-weight="700" fill="#14507e">依赖副本</text>
+  <text x="1179" y="747" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="11" fill="#55677f">preprocess / template / json 各拷一份</text>
+  <text x="40" y="859" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="12" fill="#55677f">仓库关系：metro-lang 是独立仓库，解析器由外部的 ParseEngine 生成器（gen.sh 拉起）产出，三个库（preprocess / template / json）随仓自持，可独立构建出单个 metro-lang 可执行文件。</text>
+  <text x="40" y="885" font-family="Microsoft YaHei, Segoe UI, Noto Sans SC, sans-serif" font-size="12" fill="#55677f">语言、JSON（v2）、区间与出行时间模型、样例与查看器的完整说明见 README.md 与 doc/。</text>
+</svg>

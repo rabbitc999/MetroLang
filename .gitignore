@@ -1,0 +1,27 @@
+# 生成物与构建产物：随时可重建，不进版本库。
+#
+# 生成的分析器 + 固化模板头（`sh gen.sh` / `make gen` 的产物，落在 build/ 里，
+# 这条只是兜底：万一有人把 --out-dir 指到别处）。
+build/
+
+# 文法生成器（ParseEngine）是**外部依赖**：可直接放在项目根目录（gen.sh 默认先找它），
+# 不进版本库。
+/ParseEngine
+/ParseEngine.exe
+
+# 中间产物 / 临时目录。
+*.o
+*.a
+*.exe
+tmp/
+__pycache__/
+*.py[cod]
+
+# map_view 的无头出图脚本要 `npm i jsdom`，装出来的依赖不进版本库。
+/map_view/node_modules/
+
+# 编辑器 / 系统。
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

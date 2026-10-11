@@ -1,0 +1,5 @@
+PRICE_DEFINE
+    DEFAULT_FARE {{ p.price.defaultFare }}
+{% for s in p.price.segments %}    SEGMENT {{ s.lo }} {{ s.hi }} {{ s.fare }}
+{% endfor %}{% if p.price.linearLine %}    {{ p.price.linearLine }}
+{% endif %}END_DEFINE

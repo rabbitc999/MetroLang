@@ -1,0 +1,505 @@
+/* ============================================================
+ * MetroLang 完整文法（C++17 · LALR(1)）
+ * ------------------------------------------------------------
+ * 本文件是 MetroLang 的权威语法定义，由 ParseEngine 生成词法 + 语法分析器。
+ * 它只描述语法：词法表（每个关键字一个 Token）、块结构、语句行、参数与列表。
+ * 语义（块栈 / 逐行折叠 / 模型填充）在 %code 与 %epilogue 内嵌的
+ * metro_semantics.hpp / epilogue/metro_parse.cpp 里，不写进产生式。
+ *
+ * 参考口径：metro_editor/doc/MetroLang参考文档.md。
+ * 固定字面量之间最长匹配，所以 LINE_DEFINE / LINE、TIME_RANGE / TIME 都能正确
+ * 分词；注释走 %trivia；换行 NL 是真实 Token，行结构靠它定界。
+ * 枚举值（OPERATING / INNER / ELEVATED / TRUE / AUTO ...）按标识符读取，
+ * 由语义层解释；SET / ADD / REMOVE 等动词在产生式里点名。
+ * ============================================================ */
+
+%lang cpp17
+%mode lalr
+%value_type int
+
+%token NL "\n"
+%trivia "#[^\n]*"
+%token regex STRING "'([^'\\\\]|\\\\.)*'|\"([^\"\\\\]|\\\\.)*\""
+%identifier "[A-Za-z_][A-Za-z0-9_]*"
+
+%token LBRACK "["
+%token RBRACK "]"
+%token COMMA ","
+%token COLON ":"
+%token LPAREN "("
+%token RPAREN ")"
+%token OP "==|!=|<=|>=|<|>|="
+
+/* ---------------- 关键字：每个占一个 Token ---------------- */
+%token PROGRAM_DEFINE "PROGRAM_DEFINE"
+%token STATION_DEFINE "STATION_DEFINE"
+%token STATION_MODIFY "STATION_MODIFY"
+%token OPERATION_DEFINE "OPERATION_DEFINE"
+%token PRICE_DEFINE "PRICE_DEFINE"
+%token TRANSFER_TYPE "TRANSFER_TYPE"
+%token TRANSFER_DEFINE "TRANSFER_DEFINE"
+%token VIRTUAL_TRANSFER_DEFINE "VIRTUAL_TRANSFER_DEFINE"
+%token LINE_TEMPLATE "LINE_TEMPLATE"
+%token LINE_DEFINE "LINE_DEFINE"
+%token LINE_MODIFY "LINE_MODIFY"
+%token DIRECTION_TEMPLATE "DIRECTION_TEMPLATE"
+%token DIRECTION_DEFINE "DIRECTION_DEFINE"
+%token DIRECTION_MODIFY "DIRECTION_MODIFY"
+%token HEADWAY_PROFILE "HEADWAY_PROFILE"
+%token CROWD_PROFILE "CROWD_PROFILE"
+%token DWELL_TIME_DEFINE "DWELL_TIME_DEFINE"
+%token SPEED_LIMIT_DEFINE "SPEED_LIMIT_DEFINE"
+%token LABEL_DEFINE "LABEL_DEFINE"
+%token FACILITY_DEFINE "FACILITY_DEFINE"
+%token PROMOTION_DEFINE "PROMOTION_DEFINE"
+%token ZONE_DEFINE "ZONE_DEFINE"
+%token OPERATOR_DEFINE "OPERATOR_DEFINE"
+%token BACKGROUND_DEFINE "BACKGROUND_DEFINE"
+%token SPECIAL_DEFINE "SPECIAL_DEFINE"
+%token STATION_COPY "STATION_COPY"
+%token STATION_RENAME "STATION_RENAME"
+%token STATION_DELETE "STATION_DELETE"
+%token STATION_STATUS "STATION_STATUS"
+%token LINE_COPY "LINE_COPY"
+%token LINE_RENAME "LINE_RENAME"
+%token LINE_DELETE "LINE_DELETE"
+%token LINE_MERGE "LINE_MERGE"
+%token DIRECTION_COPY "DIRECTION_COPY"
+%token DIRECTION_RENAME "DIRECTION_RENAME"
+%token DIRECTION_DELETE "DIRECTION_DELETE"
+%token DIRECTION_SPLIT "DIRECTION_SPLIT"
+%token DIRECTION_REVERSE "DIRECTION_REVERSE"
+%token TRANSFER "TRANSFER"
+%token OPEN_TIME "OPEN_TIME"
+%token DEPOT "DEPOT"
+%token VIA "VIA"
+%token VIA_DIRECTIONS "VIA_DIRECTIONS"
+%token STATION_MODE "STATION_MODE"
+%token PLATFORM_COORD "PLATFORM_COORD"
+%token GEN_TRANSFER "GEN_TRANSFER"
+%token ASSERT "ASSERT"
+%token ECHO "ECHO"
+%token KEY_CITY "KEY_CITY"
+%token OTHER_CITY "OTHER_CITY"
+%token VERSION "VERSION"
+%token UPDATE_DATE "UPDATE_DATE"
+%token AUTHOR "AUTHOR"
+%token CREATE_DATE "CREATE_DATE"
+%token NODE "NODE"
+%token COORD "COORD"
+%token CITY "CITY"
+%token OTHER_NAME "OTHER_NAME"
+%token OTHER_NAMES "OTHER_NAMES"
+%token INHERITS "INHERITS"
+%token NAME "NAME"
+%token COLOR "COLOR"
+%token OPEN_YEAR "OPEN_YEAR"
+%token FORMATION "FORMATION"
+%token MAXSPEED "MAXSPEED"
+%token POWER "POWER"
+%token BRAKE "BRAKE"
+%token DISABLED "DISABLED"
+%token DISABLE "DISABLE"
+%token IMAGE "IMAGE"
+%token LINK "LINK"
+%token SPECIAL "SPECIAL"
+%token PENDING "PENDING"
+%token STATIONS "STATIONS"
+%token DISTANCE "DISTANCE"
+%token SEGMENT_TYPE "SEGMENT_TYPE"
+%token LOOP "LOOP"
+%token EXPRESS_STOPS "EXPRESS_STOPS"
+%token FUTURE "FUTURE"
+%token IS_FUTURE "IS_FUTURE"
+%token SPEED_LIMIT "SPEED_LIMIT"
+%token CROWD "CROWD"
+%token HEADWAY "HEADWAY"
+%token DWELL "DWELL"
+%token DWELL_TIME "DWELL_TIME"
+%token REVERSE "REVERSE"
+%token REV "REV"
+%token MERGE "MERGE"
+%token CONNECT_STATION "CONNECT_STATION"
+%token ROUTING "ROUTING"
+%token AT "AT"
+%token INTO "INTO"
+%token KEEP_ORIGINAL "KEEP_ORIGINAL"
+%token CURRENCY "CURRENCY"
+%token DEFAULT_FARE "DEFAULT_FARE"
+%token SEGMENT "SEGMENT"
+%token LINEAR_EXTENSION "LINEAR_EXTENSION"
+%token THRESHOLD "THRESHOLD"
+%token BASE_FARE "BASE_FARE"
+%token RATE_PER_KM "RATE_PER_KM"
+%token TRANSFER_DISCOUNT "TRANSFER_DISCOUNT"
+%token FARE_CAP "FARE_CAP"
+%token SPECIAL_LINE "SPECIAL_LINE"
+%token ALL "ALL"
+%token DISCOUNT_AMOUNT "DISCOUNT_AMOUNT"
+%token TIME_LIMIT "TIME_LIMIT"
+%token TRANSFER_TIME "TRANSFER_TIME"
+%token STATUS "STATUS"
+%token PERIOD "PERIOD"
+%token TIME "TIME"
+%token TIME_RANGE "TIME_RANGE"
+%token VALUE "VALUE"
+%token DAYS "DAYS"
+%token TIME_MINUTES "TIME_MINUTES"
+%token WALK_SPEED "WALK_SPEED"
+%token UPDATE_EXISTING "UPDATE_EXISTING"
+%token AVG_BOARD_TIME "AVG_BOARD_TIME"
+%token ENTRY_TIME "ENTRY_TIME"
+%token OUT_STATION_TRANSFER_TIME "OUT_STATION_TRANSFER_TIME"
+%token SECURITY_CHECK "SECURITY_CHECK"
+%token ACCESSIBLE "ACCESSIBLE"
+%token ACCESSIBLE_TOILET "ACCESSIBLE_TOILET"
+%token TOILET "TOILET"
+%token ELEVATOR "ELEVATOR"
+%token WIDE_GATE "WIDE_GATE"
+%token ESCALATOR "ESCALATOR"
+%token TACTILE_PAVING "TACTILE_PAVING"
+%token GENDER "GENDER"
+%token POSITION "POSITION"
+%token QUANTITY "QUANTITY"
+%token LOCATION "LOCATION"
+%token APPLICABLE_LINES "APPLICABLE_LINES"
+%token POLICY "POLICY"
+%token FIXED "FIXED"
+%token FIXED_DISCOUNT "FIXED_DISCOUNT"
+%token TYPE "TYPE"
+%token CENTER "CENTER"
+%token RADIUS "RADIUS"
+%token PEAK_HOURS "PEAK_HOURS"
+%token POPULATION_DENSITY "POPULATION_DENSITY"
+%token AVG_RENT "AVG_RENT"
+%token ATTRIBUTES "ATTRIBUTES"
+%token SHORT_NAME "SHORT_NAME"
+%token EN_NAME "EN_NAME"
+%token COUNTRY "COUNTRY"
+%token FOUNDED "FOUNDED"
+%token WEBSITE "WEBSITE"
+%token HOTLINE "HOTLINE"
+%token DESCRIPTION "DESCRIPTION"
+%token LINES "LINES"
+%token LOGO "LOGO"
+%token OPACITY "OPACITY"
+%token SRC "SRC"
+%token BOUNDS "BOUNDS"
+%token POLYGON "POLYGON"
+%token SET "SET"
+%token ADD "ADD"
+%token REMOVE "REMOVE"
+%token COPY "COPY"
+%token RENAME "RENAME"
+%token DELETE "DELETE"
+%token DIRECTION_TYPE "DIRECTION_TYPE"
+%token MESSAGE "MESSAGE"
+%token LINE "LINE"
+%token DIRECTION "DIRECTION"
+%token ENABLED "ENABLED"
+%token END_DEFINE "END_DEFINE"
+%token END_POLICY "END_POLICY"
+%token END_ATTRIBUTES "END_ATTRIBUTES"
+%space " \t\r"
+
+%code
+#include "metro_semantics.hpp"
+
+using namespace metro;
+
+/* 词法单元 -> 语义值句柄：2 = 字符串，1 = 数字，3 = 其它。 */
+#define PARSER_USER_TOKEN_VALUE(pToken)                                    \
+    (::metro::mb_token_value(                                              \
+        ((pToken)->type == TOKEN_STRING)                                   \
+            ? 2                                                            \
+            : (((pToken)->type == TOKEN_NUMBER) ? 1 : 3),                  \
+        (pToken)->text, (pToken)->value))
+%endcode
+
+%start document
+
+/* LR 分析栈上限：大文件里右递归的列表会把栈撑高，默认 64 不够用。 */
+%max_stack_depth 8192
+
+/* ============================ 文档与语句 ============================ */
+document := items                          { $$ = 0; }
+items := items item                        { $$ = 0; }
+items := %empty                            { $$ = 0; }
+item := NL                                 { $$ = 0; }
+item := stmt                               { $$ = 0; }
+item := block                              { $$ = 0; }
+
+stmt := head args NL                       { mb_line($1); $$ = 0; }
+head := top_kw                             { $$ = $1; }
+head := VARIABLE                           { $$ = $1; }
+top_kw := STATION_COPY { $$ = $1; } | STATION_RENAME { $$ = $1; } | STATION_DELETE { $$ = $1; } | STATION_STATUS { $$ = $1; } | LINE_COPY { $$ = $1; } | LINE_RENAME { $$ = $1; } | LINE_DELETE { $$ = $1; } | LINE_MERGE { $$ = $1; } | DIRECTION_COPY { $$ = $1; } | DIRECTION_RENAME { $$ = $1; } | DIRECTION_DELETE { $$ = $1; } | DIRECTION_SPLIT { $$ = $1; } | DIRECTION_REVERSE { $$ = $1; } | TRANSFER { $$ = $1; } | OPEN_TIME { $$ = $1; } | DEPOT { $$ = $1; } | VIA { $$ = $1; } | STATION_MODE { $$ = $1; } | PLATFORM_COORD { $$ = $1; } | GEN_TRANSFER { $$ = $1; } | ASSERT { $$ = $1; } | ECHO { $$ = $1; };
+
+/* ============================ 块 ============================ */
+block := program_block { $$ = 0; } | station_block { $$ = 0; } | station_modify_block { $$ = 0; } | operation_block { $$ = 0; } | price_block { $$ = 0; };
+block := transfer_type_block { $$ = 0; } | transfer_define_block { $$ = 0; } | virtual_transfer_block { $$ = 0; };
+block := line_template_block { $$ = 0; } | line_block { $$ = 0; } | line_modify_block { $$ = 0; };
+block := direction_template_block { $$ = 0; } | direction_block { $$ = 0; } | direction_modify_block { $$ = 0; };
+block := headway_profile_block { $$ = 0; } | crowd_profile_block { $$ = 0; } | dwell_block { $$ = 0; } | speed_limit_block { $$ = 0; };
+block := label_block { $$ = 0; } | facility_block { $$ = 0; } | promotion_block { $$ = 0; };
+block := zone_block { $$ = 0; } | operator_block { $$ = 0; } | background_block { $$ = 0; } | special_define_block { $$ = 0; };
+
+/* ---- 程序 / 站点 / 运营 / 票价 / 换乘 ---- */
+program_block := PROGRAM_DEFINE program_open program_members END_DEFINE NL { mb_end_block(); $$ = 0; }
+program_open := args NL                    { mb_begin(MB_PROGRAM); $$ = 0; }
+program_members := program_members program_member { $$ = 0; }
+program_members := %empty                  { $$ = 0; }
+program_members := program_members NL   { $$ = 0; }
+program_member := program_field args NL    { mb_line($1); $$ = 0; }
+program_field := KEY_CITY { $$ = $1; } | OTHER_CITY { $$ = $1; } | VERSION { $$ = $1; } | UPDATE_DATE { $$ = $1; } | AUTHOR { $$ = $1; } | CREATE_DATE { $$ = $1; };
+
+station_block := STATION_DEFINE station_open station_members END_DEFINE NL { mb_end_block(); $$ = 0; }
+station_open := args NL                    { mb_begin(MB_STATION); $$ = 0; }
+station_members := station_members station_member { $$ = 0; }
+station_members := %empty                  { $$ = 0; }
+station_members := station_members NL   { $$ = 0; }
+station_member := station_field args NL    { mb_line($1); $$ = 0; }
+station_field := NODE { $$ = $1; } | OTHER_NAME { $$ = $1; } | OTHER_NAMES { $$ = $1; } | COORD { $$ = $1; } | CITY { $$ = $1; };
+
+station_modify_block := STATION_MODIFY s_mod_open s_mod_members END_DEFINE NL { mb_end_block(); $$ = 0; }
+s_mod_open := args NL                      { mb_begin(MB_STATION_MODIFY); $$ = 0; }
+s_mod_members := s_mod_members s_mod_member { $$ = 0; }
+s_mod_members := %empty                    { $$ = 0; }
+s_mod_members := s_mod_members NL       { $$ = 0; }
+s_mod_member := verb station_attr args NL  { mb_modify($1, $2); $$ = 0; }
+station_attr := COORD { $$ = $1; } | CITY { $$ = $1; } | OTHER_NAMES { $$ = $1; } | OTHER_NAME { $$ = $1; };
+station_attr := NODE { $$ = $1; } | NAME { $$ = $1; } | OPEN_YEAR { $$ = $1; };
+
+operation_block := OPERATION_DEFINE operation_open operation_members END_DEFINE NL { mb_end_block(); $$ = 0; }
+operation_open := args NL                  { mb_begin(MB_OPERATION); $$ = 0; }
+operation_members := operation_members operation_member { $$ = 0; }
+operation_members := %empty                { $$ = 0; }
+operation_members := operation_members NL { $$ = 0; }
+operation_member := operation_field args NL { mb_line($1); $$ = 0; }
+operation_field := TRANSFER_TIME { $$ = $1; } | DWELL_TIME { $$ = $1; } | OUT_STATION_TRANSFER_TIME { $$ = $1; } | ENTRY_TIME { $$ = $1; } | AVG_BOARD_TIME { $$ = $1; };
+
+price_block := PRICE_DEFINE price_open price_members END_DEFINE NL { mb_end_block(); $$ = 0; }
+price_open := args NL                      { mb_begin(MB_PRICE); $$ = 0; }
+price_members := price_members price_member { $$ = 0; }
+price_members := %empty                    { $$ = 0; }
+price_members := price_members NL       { $$ = 0; }
+price_member := price_field args NL        { mb_line($1); $$ = 0; }
+price_field := CURRENCY { $$ = $1; } | DEFAULT_FARE { $$ = $1; } | SEGMENT { $$ = $1; } | LINEAR_EXTENSION { $$ = $1; } | TRANSFER_DISCOUNT { $$ = $1; } | FARE_CAP { $$ = $1; } | SPECIAL_LINE { $$ = $1; };
+
+transfer_type_block := TRANSFER_TYPE transfer_type_open transfer_type_members END_DEFINE NL { mb_end_block(); $$ = 0; }
+transfer_type_open := args NL              { mb_begin(MB_TRANSFER_TYPE); $$ = 0; }
+transfer_type_members := transfer_type_members transfer_type_member { $$ = 0; }
+transfer_type_members := %empty            { $$ = 0; }
+transfer_type_members := transfer_type_members NL { $$ = 0; }
+transfer_type_member := transfer_type_field args NL { mb_line($1); $$ = 0; }
+transfer_type_field := TIME { $$ = $1; } | STATUS { $$ = $1; } | SECURITY_CHECK { $$ = $1; };
+
+transfer_define_block := TRANSFER_DEFINE transfer_define_open transfer_define_members END_DEFINE NL { mb_end_block(); $$ = 0; }
+transfer_define_open := args NL            { mb_begin(MB_TRANSFER_DEFINE); $$ = 0; }
+transfer_define_members := transfer_define_members transfer_define_member { $$ = 0; }
+transfer_define_members := %empty          { $$ = 0; }
+transfer_define_members := transfer_define_members NL { $$ = 0; }
+transfer_define_member := transfer_define_field args NL { mb_line($1); $$ = 0; }
+transfer_define_field := TIME { $$ = $1; } | STATUS { $$ = $1; } | SECURITY_CHECK { $$ = $1; };
+
+virtual_transfer_block := VIRTUAL_TRANSFER_DEFINE virtual_transfer_open virtual_transfer_members END_DEFINE NL { mb_end_block(); $$ = 0; }
+virtual_transfer_open := args NL           { mb_begin(MB_VIRTUAL_TRANSFER); $$ = 0; }
+virtual_transfer_members := virtual_transfer_members virtual_transfer_member { $$ = 0; }
+virtual_transfer_members := %empty         { $$ = 0; }
+virtual_transfer_members := virtual_transfer_members NL { $$ = 0; }
+virtual_transfer_member := virtual_transfer_field args NL { mb_line($1); $$ = 0; }
+virtual_transfer_field := TIME_MINUTES { $$ = $1; } | SECURITY_CHECK { $$ = $1; } | VIA_DIRECTIONS { $$ = $1; };
+
+/* ---- 线路 / 方向 ---- */
+line_template_block := LINE_TEMPLATE line_template_open line_template_members END_DEFINE NL { mb_end_block(); $$ = 0; }
+line_template_open := args NL              { mb_begin(MB_LINE_TEMPLATE); $$ = 0; }
+line_template_members := line_template_members line_template_member { $$ = 0; }
+line_template_members := %empty            { $$ = 0; }
+line_template_members := line_template_members NL { $$ = 0; }
+line_template_member := line_field args NL { mb_line($1); $$ = 0; }
+
+line_block := LINE_DEFINE line_open line_members END_DEFINE NL { mb_end_block(); $$ = 0; }
+line_open := args NL                       { mb_begin(MB_LINE); $$ = 0; }
+line_members := line_members line_member   { $$ = 0; }
+line_members := %empty                     { $$ = 0; }
+line_members := line_members NL         { $$ = 0; }
+line_member := line_field args NL          { mb_line($1); $$ = 0; }
+line_member := direction_block             { $$ = 0; }
+/* `DIRECTION_DEFINE 新ID REV 原ID` 是一行式快捷方式，**不带** END_DEFINE；
+ * 块形式的 DIRECTION_DEFINE 才吃成员和 END_DEFINE。因为 REV 已从 kw_arg /
+ * member_kw 里摘掉，这两种写法在 LALR(1) 下不冲突。 */
+line_member := special_define_block        { $$ = 0; }
+line_field := NAME { $$ = $1; } | COLOR { $$ = $1; } | CITY { $$ = $1; } | OPEN_YEAR { $$ = $1; } | FORMATION { $$ = $1; } | MAXSPEED { $$ = $1; } | POWER { $$ = $1; } | BRAKE { $$ = $1; } | DISABLED { $$ = $1; };
+line_field := DISABLE { $$ = $1; } | IMAGE { $$ = $1; } | LINK { $$ = $1; } | SPECIAL { $$ = $1; } | PENDING { $$ = $1; } | DEPOT { $$ = $1; } | INHERITS { $$ = $1; };
+
+line_modify_block := LINE_MODIFY line_modify_open line_modify_members END_DEFINE NL { mb_end_block(); $$ = 0; }
+line_modify_open := args NL                { mb_begin(MB_LINE_MODIFY); $$ = 0; }
+line_modify_members := line_modify_members line_modify_member { $$ = 0; }
+line_modify_members := %empty              { $$ = 0; }
+line_modify_members := line_modify_members NL { $$ = 0; }
+line_modify_member := verb line_attr args NL { mb_modify($1, $2); $$ = 0; }
+line_attr := NAME { $$ = $1; } | COLOR { $$ = $1; } | MAXSPEED { $$ = $1; } | IMAGE { $$ = $1; } | SPECIAL { $$ = $1; };
+line_attr := OPEN_YEAR { $$ = $1; } | CITY { $$ = $1; } | FORMATION { $$ = $1; } | POWER { $$ = $1; } | BRAKE { $$ = $1; } | LINK { $$ = $1; };
+line_attr := DISABLE { $$ = $1; } | DISABLED { $$ = $1; } | PENDING { $$ = $1; } | INHERITS { $$ = $1; } | DEPOT { $$ = $1; } | OPEN_TIME { $$ = $1; };
+
+direction_template_block := DIRECTION_TEMPLATE direction_template_open direction_template_members END_DEFINE NL { mb_end_block(); $$ = 0; }
+direction_template_open := args NL         { mb_begin(MB_DIRECTION_TEMPLATE); $$ = 0; }
+direction_template_members := direction_template_members direction_template_member { $$ = 0; }
+direction_template_members := %empty       { $$ = 0; }
+direction_template_members := direction_template_members NL { $$ = 0; }
+direction_template_member := direction_template_field args NL { mb_line($1); $$ = 0; }
+direction_template_field := IS_FUTURE { $$ = $1; } | CONNECT_STATION { $$ = $1; } | LOOP { $$ = $1; } | INHERITS { $$ = $1; };
+
+direction_block := DIRECTION_DEFINE direction_open direction_members END_DEFINE NL { mb_end_block(); $$ = 0; }
+direction_open := args NL                  { mb_begin(MB_DIRECTION); $$ = 0; }
+direction_members := direction_members direction_member { $$ = 0; }
+direction_members := %empty                { $$ = 0; }
+direction_members := direction_members NL { $$ = 0; }
+direction_member := direction_field args NL { mb_line($1); $$ = 0; }
+direction_field := STATIONS { $$ = $1; } | DISTANCE { $$ = $1; } | SEGMENT_TYPE { $$ = $1; } | LOOP { $$ = $1; } | EXPRESS_STOPS { $$ = $1; } | ROUTING { $$ = $1; } | FUTURE { $$ = $1; };
+direction_field := IS_FUTURE { $$ = $1; } | SPEED_LIMIT { $$ = $1; } | CROWD { $$ = $1; } | HEADWAY { $$ = $1; } | DWELL { $$ = $1; } | DWELL_TIME { $$ = $1; } | OPEN_TIME { $$ = $1; };
+direction_field := VIA { $$ = $1; } | REVERSE { $$ = $1; } | REV { $$ = $1; } | MERGE { $$ = $1; } | CONNECT_STATION { $$ = $1; } | INHERITS { $$ = $1; };
+
+
+direction_modify_block := DIRECTION_MODIFY direction_modify_open direction_modify_members END_DEFINE NL { mb_end_block(); $$ = 0; }
+direction_modify_open := args NL           { mb_begin(MB_DIRECTION_MODIFY); $$ = 0; }
+direction_modify_members := direction_modify_members direction_modify_member { $$ = 0; }
+direction_modify_members := %empty         { $$ = 0; }
+direction_modify_members := direction_modify_members NL { $$ = 0; }
+direction_modify_member := verb direction_attr args NL { mb_modify($1, $2); $$ = 0; }
+direction_attr := LOOP { $$ = $1; } | ROUTING { $$ = $1; } | CONNECT_STATION { $$ = $1; } | IS_FUTURE { $$ = $1; } | DIRECTION_TYPE { $$ = $1; } | EXPRESS_STOPS { $$ = $1; };
+
+/* ---- 时段 / 停站 / 限速 / 标签 / 无障碍 / 优惠 / 区域 / 公司 / 背景 ---- */
+headway_profile_block := HEADWAY_PROFILE headway_open headway_members END_DEFINE NL { mb_end_block(); $$ = 0; }
+headway_open := args NL                    { mb_begin(MB_HEADWAY_PROFILE); $$ = 0; }
+headway_members := headway_members headway_member { $$ = 0; }
+headway_members := %empty                  { $$ = 0; }
+headway_members := headway_members NL   { $$ = 0; }
+headway_member := PERIOD args NL           { mb_line($1); $$ = 0; }
+
+crowd_profile_block := CROWD_PROFILE crowd_open crowd_members END_DEFINE NL { mb_end_block(); $$ = 0; }
+crowd_open := args NL                      { mb_begin(MB_CROWD_PROFILE); $$ = 0; }
+crowd_members := crowd_members crowd_member { $$ = 0; }
+crowd_members := %empty                    { $$ = 0; }
+crowd_members := crowd_members NL       { $$ = 0; }
+crowd_member := PERIOD args NL             { mb_line($1); $$ = 0; }
+
+dwell_block := DWELL_TIME_DEFINE dwell_open dwell_members END_DEFINE NL { mb_end_block(); $$ = 0; }
+dwell_open := args NL                      { mb_begin(MB_DWELL_DEFINE); $$ = 0; }
+dwell_members := dwell_members dwell_member { $$ = 0; }
+dwell_members := %empty                    { $$ = 0; }
+dwell_members := dwell_members NL       { $$ = 0; }
+dwell_member := dwell_field args NL        { mb_line($1); $$ = 0; }
+dwell_field := NODE { $$ = $1; } | LINE { $$ = $1; } | DIRECTION { $$ = $1; };
+
+speed_limit_block := SPEED_LIMIT_DEFINE speed_limit_open speed_limit_members END_DEFINE NL { mb_end_block(); $$ = 0; }
+speed_limit_open := args NL                { mb_begin(MB_SPEED_LIMIT_DEFINE); $$ = 0; }
+speed_limit_members := speed_limit_members speed_limit_member { $$ = 0; }
+speed_limit_members := %empty              { $$ = 0; }
+speed_limit_members := speed_limit_members NL { $$ = 0; }
+speed_limit_member := NODE args NL         { mb_line($1); $$ = 0; }
+
+label_block := LABEL_DEFINE label_open label_members END_DEFINE NL { mb_end_block(); $$ = 0; }
+label_open := args NL                      { mb_begin(MB_LABEL_DEFINE); $$ = 0; }
+label_members := label_members label_member { $$ = 0; }
+label_members := %empty                    { $$ = 0; }
+label_members := label_members NL       { $$ = 0; }
+label_member := NODE args NL               { mb_line($1); $$ = 0; }
+
+facility_block := FACILITY_DEFINE facility_open facility_members END_DEFINE NL { mb_end_block(); $$ = 0; }
+facility_open := args NL                   { mb_begin(MB_FACILITY_DEFINE); $$ = 0; }
+facility_members := facility_members facility_member { $$ = 0; }
+facility_members := %empty                 { $$ = 0; }
+facility_members := facility_members NL { $$ = 0; }
+facility_member := facility_field args NL  { mb_line($1); $$ = 0; }
+facility_field := TOILET { $$ = $1; } | ACCESSIBLE_TOILET { $$ = $1; } | ELEVATOR { $$ = $1; } | WIDE_GATE { $$ = $1; } | ESCALATOR { $$ = $1; } | TACTILE_PAVING { $$ = $1; };
+
+promotion_block := PROMOTION_DEFINE promotion_open promotion_members END_DEFINE NL { mb_end_block(); $$ = 0; }
+promotion_open := args NL                  { mb_begin(MB_PROMOTION_DEFINE); $$ = 0; }
+promotion_members := promotion_members policy_block { $$ = 0; }
+promotion_members := %empty                { $$ = 0; }
+promotion_members := promotion_members NL { $$ = 0; }
+policy_block := POLICY policy_open policy_members END_POLICY NL { mb_end_policy(); $$ = 0; }
+policy_open := args NL                     { mb_begin(MB_POLICY); $$ = 0; }
+policy_members := policy_members policy_member { $$ = 0; }
+policy_members := %empty                   { $$ = 0; }
+policy_members := policy_members NL     { $$ = 0; }
+policy_member := policy_field args NL      { mb_line($1); $$ = 0; }
+policy_field := NAME { $$ = $1; } | DESCRIPTION { $$ = $1; } | TYPE { $$ = $1; } | VALUE { $$ = $1; } | APPLICABLE_LINES { $$ = $1; } | TIME_RANGE { $$ = $1; } | DAYS { $$ = $1; };
+
+zone_block := ZONE_DEFINE zone_open zone_members END_DEFINE NL { mb_end_block(); $$ = 0; }
+zone_open := args NL                       { mb_begin(MB_ZONE_DEFINE); $$ = 0; }
+zone_members := zone_members zone_member   { $$ = 0; }
+zone_members := %empty                     { $$ = 0; }
+zone_members := zone_members NL         { $$ = 0; }
+zone_member := zone_field args NL          { mb_line($1); $$ = 0; }
+zone_member := attributes_block            { $$ = 0; }
+zone_field := NAME { $$ = $1; } | TYPE { $$ = $1; } | CITY { $$ = $1; } | COLOR { $$ = $1; } | CENTER { $$ = $1; } | RADIUS { $$ = $1; } | POLYGON { $$ = $1; } | STATIONS { $$ = $1; };
+attributes_block := ATTRIBUTES attributes_open attributes_members END_ATTRIBUTES NL { mb_end_attributes(); $$ = 0; }
+attributes_open := args NL                 { mb_begin(MB_ATTRIBUTES); $$ = 0; }
+attributes_members := attributes_members attributes_member { $$ = 0; }
+attributes_members := %empty               { $$ = 0; }
+attributes_members := attributes_members NL { $$ = 0; }
+attributes_member := attributes_field args NL { mb_line($1); $$ = 0; }
+attributes_field := PEAK_HOURS { $$ = $1; } | POPULATION_DENSITY { $$ = $1; } | AVG_RENT { $$ = $1; };
+
+operator_block := OPERATOR_DEFINE operator_open operator_members END_DEFINE NL { mb_end_block(); $$ = 0; }
+operator_open := args NL                   { mb_begin(MB_OPERATOR_DEFINE); $$ = 0; }
+operator_members := operator_members operator_member { $$ = 0; }
+operator_members := %empty                 { $$ = 0; }
+operator_members := operator_members NL { $$ = 0; }
+operator_member := operator_field args NL  { mb_line($1); $$ = 0; }
+operator_field := NAME { $$ = $1; } | SHORT_NAME { $$ = $1; } | EN_NAME { $$ = $1; } | COUNTRY { $$ = $1; } | CITY { $$ = $1; } | FOUNDED { $$ = $1; } | WEBSITE { $$ = $1; } | HOTLINE { $$ = $1; };
+operator_field := DESCRIPTION { $$ = $1; } | LOGO { $$ = $1; } | LINES { $$ = $1; };
+
+background_block := BACKGROUND_DEFINE background_open background_members END_DEFINE NL { mb_end_block(); $$ = 0; }
+background_open := args NL                 { mb_begin(MB_BACKGROUND_DEFINE); $$ = 0; }
+background_members := background_members background_member { $$ = 0; }
+background_members := %empty               { $$ = 0; }
+background_members := background_members NL { $$ = 0; }
+background_member := background_field args NL { mb_line($1); $$ = 0; }
+background_field := NAME { $$ = $1; } | TYPE { $$ = $1; } | SRC { $$ = $1; } | BOUNDS { $$ = $1; } | OPACITY { $$ = $1; } | CITY { $$ = $1; };
+
+special_define_block := SPECIAL_DEFINE special_open special_members END_DEFINE NL { mb_end_block(); $$ = 0; }
+special_open := args NL                    { mb_begin(MB_SPECIAL_DEFINE); $$ = 0; }
+special_members := special_members special_member { $$ = 0; }
+special_members := %empty                  { $$ = 0; }
+special_members := special_members NL   { $$ = 0; }
+special_member := any_head args NL         { mb_line($1); $$ = 0; }
+any_head := top_kw { $$ = $1; } | member_kw { $$ = $1; } | VARIABLE { $$ = $1; };
+
+/* ============================ 参数与列表 ============================ */
+args := args arg                           { $$ = 0; }
+args := %empty                             { $$ = 0; }
+arg := STRING                              { mb_arg($1); $$ = 0; }
+arg := NUMBER                              { mb_arg($1); $$ = 0; }
+arg := VARIABLE                            { mb_arg($1); $$ = 0; }
+arg := kw_arg                              { mb_arg($1); $$ = 0; }
+/* 列表直接由 list 产生式负责：不要再写 `arg := LBRACK list RBRACK`。
+ * 那个写法会给 `list` 造出一个「只有 [] 前缀」的中间状态，在超长文法里
+ * 它的闭包会漏掉 list_item 的全部移进动作（`[1]` 被误判成语法错误）。 */
+arg := list                                { $$ = 0; }
+arg := COMMA                               { $$ = 0; }
+arg := COLON                               { $$ = 0; }
+arg := LPAREN                              { $$ = 0; }
+arg := RPAREN                              { $$ = 0; }
+arg := OP                                  { $$ = 0; }
+
+/* 列表用**右递归**：`[` 之后先 Shift 第一项，遇到 `]` 才归约空尾。
+ * 不要把这里改成“左递归 + %empty”的写法：那一形在超长文法里会漏算
+ * 空规则的 lookahead，表现为 `[1]` / `['a']` 被误判成语法错误。 */
+list := LBRACK list_body RBRACK            { $$ = 0; }
+list_body := list_item list_body           { $$ = 0; }
+list_body := %empty                        { $$ = 0; }
+list_item := STRING                        { mb_arg($1); $$ = 0; }
+list_item := NUMBER                        { mb_arg($1); $$ = 0; }
+list_item := VARIABLE                      { mb_arg($1); $$ = 0; }
+list_item := kw_arg                        { mb_arg($1); $$ = 0; }
+list_item := COMMA                         { $$ = 0; }
+list_item := NL                            { $$ = 0; }
+list_item := list                          { $$ = 0; }
+
+kw_arg := PROGRAM_DEFINE { $$ = $1; } | STATION_DEFINE { $$ = $1; } | STATION_MODIFY { $$ = $1; } | OPERATION_DEFINE { $$ = $1; } | PRICE_DEFINE { $$ = $1; } | TRANSFER_TYPE { $$ = $1; } | TRANSFER_DEFINE { $$ = $1; } | VIRTUAL_TRANSFER_DEFINE { $$ = $1; } | LINE_TEMPLATE { $$ = $1; } | LINE_DEFINE { $$ = $1; } | LINE_MODIFY { $$ = $1; } | DIRECTION_TEMPLATE { $$ = $1; } | DIRECTION_DEFINE { $$ = $1; } | DIRECTION_MODIFY { $$ = $1; } | HEADWAY_PROFILE { $$ = $1; } | CROWD_PROFILE { $$ = $1; } | DWELL_TIME_DEFINE { $$ = $1; } | SPEED_LIMIT_DEFINE { $$ = $1; } | LABEL_DEFINE { $$ = $1; } | FACILITY_DEFINE { $$ = $1; } | PROMOTION_DEFINE { $$ = $1; } | ZONE_DEFINE { $$ = $1; } | OPERATOR_DEFINE { $$ = $1; } | BACKGROUND_DEFINE { $$ = $1; } | SPECIAL_DEFINE { $$ = $1; } | STATION_COPY { $$ = $1; } | STATION_RENAME { $$ = $1; } | STATION_DELETE { $$ = $1; } | STATION_STATUS { $$ = $1; } | LINE_COPY { $$ = $1; } | LINE_RENAME { $$ = $1; } | LINE_DELETE { $$ = $1; } | LINE_MERGE { $$ = $1; } | DIRECTION_COPY { $$ = $1; } | DIRECTION_RENAME { $$ = $1; } | DIRECTION_DELETE { $$ = $1; } | DIRECTION_SPLIT { $$ = $1; } | DIRECTION_REVERSE { $$ = $1; } | TRANSFER { $$ = $1; } | OPEN_TIME { $$ = $1; } | DEPOT { $$ = $1; } | VIA { $$ = $1; } | STATION_MODE { $$ = $1; } | PLATFORM_COORD { $$ = $1; } | GEN_TRANSFER { $$ = $1; } | ASSERT { $$ = $1; } | ECHO { $$ = $1; } | KEY_CITY { $$ = $1; } | OTHER_CITY { $$ = $1; } | VERSION { $$ = $1; } | UPDATE_DATE { $$ = $1; } | AUTHOR { $$ = $1; } | CREATE_DATE { $$ = $1; } | NODE { $$ = $1; } | COORD { $$ = $1; } | CITY { $$ = $1; } | OTHER_NAME { $$ = $1; } | OTHER_NAMES { $$ = $1; } | INHERITS { $$ = $1; } | NAME { $$ = $1; } | COLOR { $$ = $1; } | OPEN_YEAR { $$ = $1; } | FORMATION { $$ = $1; } | MAXSPEED { $$ = $1; } | POWER { $$ = $1; } | BRAKE { $$ = $1; } | DISABLED { $$ = $1; } | DISABLE { $$ = $1; } | IMAGE { $$ = $1; } | LINK { $$ = $1; } | SPECIAL { $$ = $1; } | PENDING { $$ = $1; } | STATIONS { $$ = $1; } | DISTANCE { $$ = $1; } | SEGMENT_TYPE { $$ = $1; } | LOOP { $$ = $1; } | EXPRESS_STOPS { $$ = $1; } | FUTURE { $$ = $1; } | IS_FUTURE { $$ = $1; } | SPEED_LIMIT { $$ = $1; } | CROWD { $$ = $1; } | HEADWAY { $$ = $1; } | DWELL { $$ = $1; } | DWELL_TIME { $$ = $1; } | REVERSE { $$ = $1; } | REV { $$ = $1; } | MERGE { $$ = $1; } | CONNECT_STATION { $$ = $1; } | ROUTING { $$ = $1; } | AT { $$ = $1; } | INTO { $$ = $1; } | KEEP_ORIGINAL { $$ = $1; } | CURRENCY { $$ = $1; } | DEFAULT_FARE { $$ = $1; } | SEGMENT { $$ = $1; } | LINEAR_EXTENSION { $$ = $1; } | THRESHOLD { $$ = $1; } | BASE_FARE { $$ = $1; } | RATE_PER_KM { $$ = $1; } | TRANSFER_DISCOUNT { $$ = $1; } | FARE_CAP { $$ = $1; } | SPECIAL_LINE { $$ = $1; } | ALL { $$ = $1; } | DISCOUNT_AMOUNT { $$ = $1; } | TIME_LIMIT { $$ = $1; } | TRANSFER_TIME { $$ = $1; } | STATUS { $$ = $1; } | PERIOD { $$ = $1; } | TIME { $$ = $1; } | TIME_RANGE { $$ = $1; } | VALUE { $$ = $1; } | DAYS { $$ = $1; } | TIME_MINUTES { $$ = $1; } | WALK_SPEED { $$ = $1; } | UPDATE_EXISTING { $$ = $1; } | AVG_BOARD_TIME { $$ = $1; } | ENTRY_TIME { $$ = $1; } | OUT_STATION_TRANSFER_TIME { $$ = $1; } | SECURITY_CHECK { $$ = $1; } | ACCESSIBLE { $$ = $1; } | ACCESSIBLE_TOILET { $$ = $1; } | TOILET { $$ = $1; } | ELEVATOR { $$ = $1; } | WIDE_GATE { $$ = $1; } | ESCALATOR { $$ = $1; } | TACTILE_PAVING { $$ = $1; } | GENDER { $$ = $1; } | POSITION { $$ = $1; } | QUANTITY { $$ = $1; } | LOCATION { $$ = $1; } | APPLICABLE_LINES { $$ = $1; } | POLICY { $$ = $1; } | FIXED { $$ = $1; } | FIXED_DISCOUNT { $$ = $1; } | TYPE { $$ = $1; } | CENTER { $$ = $1; } | RADIUS { $$ = $1; } | PEAK_HOURS { $$ = $1; } | POPULATION_DENSITY { $$ = $1; } | AVG_RENT { $$ = $1; } | ATTRIBUTES { $$ = $1; } | SHORT_NAME { $$ = $1; } | EN_NAME { $$ = $1; } | COUNTRY { $$ = $1; } | FOUNDED { $$ = $1; } | WEBSITE { $$ = $1; } | HOTLINE { $$ = $1; } | DESCRIPTION { $$ = $1; } | LINES { $$ = $1; } | LOGO { $$ = $1; } | OPACITY { $$ = $1; } | SRC { $$ = $1; } | BOUNDS { $$ = $1; } | POLYGON { $$ = $1; } | SET { $$ = $1; } | ADD { $$ = $1; } | REMOVE { $$ = $1; } | COPY { $$ = $1; } | RENAME { $$ = $1; } | DELETE { $$ = $1; } | DIRECTION_TYPE { $$ = $1; } | MESSAGE { $$ = $1; } | LINE { $$ = $1; } | DIRECTION { $$ = $1; } | ENABLED { $$ = $1; } | END_DEFINE { $$ = $1; } | END_POLICY { $$ = $1; } | END_ATTRIBUTES { $$ = $1; };
+member_kw := KEY_CITY { $$ = $1; } | OTHER_CITY { $$ = $1; } | VERSION { $$ = $1; } | UPDATE_DATE { $$ = $1; } | AUTHOR { $$ = $1; } | CREATE_DATE { $$ = $1; } | NODE { $$ = $1; } | COORD { $$ = $1; } | CITY { $$ = $1; } | OTHER_NAME { $$ = $1; } | OTHER_NAMES { $$ = $1; } | INHERITS { $$ = $1; } | NAME { $$ = $1; } | COLOR { $$ = $1; } | OPEN_YEAR { $$ = $1; } | FORMATION { $$ = $1; } | MAXSPEED { $$ = $1; } | POWER { $$ = $1; } | BRAKE { $$ = $1; } | DISABLED { $$ = $1; } | DISABLE { $$ = $1; } | IMAGE { $$ = $1; } | LINK { $$ = $1; } | SPECIAL { $$ = $1; } | PENDING { $$ = $1; } | STATIONS { $$ = $1; } | DISTANCE { $$ = $1; } | SEGMENT_TYPE { $$ = $1; } | LOOP { $$ = $1; } | EXPRESS_STOPS { $$ = $1; } | FUTURE { $$ = $1; } | IS_FUTURE { $$ = $1; } | SPEED_LIMIT { $$ = $1; } | CROWD { $$ = $1; } | HEADWAY { $$ = $1; } | DWELL { $$ = $1; } | DWELL_TIME { $$ = $1; } | REVERSE { $$ = $1; } | REV { $$ = $1; } | MERGE { $$ = $1; } | CONNECT_STATION { $$ = $1; } | ROUTING { $$ = $1; } | AT { $$ = $1; } | INTO { $$ = $1; } | KEEP_ORIGINAL { $$ = $1; } | CURRENCY { $$ = $1; } | DEFAULT_FARE { $$ = $1; } | SEGMENT { $$ = $1; } | LINEAR_EXTENSION { $$ = $1; } | THRESHOLD { $$ = $1; } | BASE_FARE { $$ = $1; } | RATE_PER_KM { $$ = $1; } | TRANSFER_DISCOUNT { $$ = $1; } | FARE_CAP { $$ = $1; } | SPECIAL_LINE { $$ = $1; } | ALL { $$ = $1; } | DISCOUNT_AMOUNT { $$ = $1; } | TIME_LIMIT { $$ = $1; } | TRANSFER_TIME { $$ = $1; } | STATUS { $$ = $1; } | PERIOD { $$ = $1; } | TIME { $$ = $1; } | TIME_RANGE { $$ = $1; } | VALUE { $$ = $1; } | DAYS { $$ = $1; } | TIME_MINUTES { $$ = $1; } | WALK_SPEED { $$ = $1; } | UPDATE_EXISTING { $$ = $1; } | AVG_BOARD_TIME { $$ = $1; } | ENTRY_TIME { $$ = $1; } | OUT_STATION_TRANSFER_TIME { $$ = $1; } | SECURITY_CHECK { $$ = $1; } | ACCESSIBLE { $$ = $1; } | ACCESSIBLE_TOILET { $$ = $1; } | TOILET { $$ = $1; } | ELEVATOR { $$ = $1; } | WIDE_GATE { $$ = $1; } | ESCALATOR { $$ = $1; } | TACTILE_PAVING { $$ = $1; } | GENDER { $$ = $1; } | POSITION { $$ = $1; } | QUANTITY { $$ = $1; } | LOCATION { $$ = $1; } | APPLICABLE_LINES { $$ = $1; } | FIXED { $$ = $1; } | FIXED_DISCOUNT { $$ = $1; } | TYPE { $$ = $1; } | CENTER { $$ = $1; } | RADIUS { $$ = $1; } | PEAK_HOURS { $$ = $1; } | POPULATION_DENSITY { $$ = $1; } | AVG_RENT { $$ = $1; } | SHORT_NAME { $$ = $1; } | EN_NAME { $$ = $1; } | COUNTRY { $$ = $1; } | FOUNDED { $$ = $1; } | WEBSITE { $$ = $1; } | HOTLINE { $$ = $1; } | DESCRIPTION { $$ = $1; } | LINES { $$ = $1; } | LOGO { $$ = $1; } | OPACITY { $$ = $1; } | SRC { $$ = $1; } | BOUNDS { $$ = $1; } | POLYGON { $$ = $1; } | COPY { $$ = $1; } | RENAME { $$ = $1; } | DELETE { $$ = $1; } | DIRECTION_TYPE { $$ = $1; } | MESSAGE { $$ = $1; } | LINE { $$ = $1; } | DIRECTION { $$ = $1; } | ENABLED { $$ = $1; };
+verb := SET { $$ = $1; } | ADD { $$ = $1; } | REMOVE { $$ = $1; };
+
+%epilogue include "epilogue/metro_parse.cpp"

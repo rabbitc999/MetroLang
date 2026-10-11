@@ -1,0 +1,71 @@
+{
+  "name": "metro-lang-editor",
+  "displayName": "MetroLang",
+  "description": "MetroLang（.metro / .m）语言支持：语法高亮与块折叠（*_DEFINE / TRANSFER_TYPE / POLICY / ATTRIBUTES → END_*），命令打开语言参考。",
+  "version": "1.0.0",
+  "publisher": "rabbitc999",
+  "author": {
+    "name": "小兔糖糖OvO",
+    "email": "rabbitc999@outlook.com"
+  },
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "metro",
+    "metrolang",
+    "metro-lang",
+    "parseengine"
+  ],
+  "main": "./extension.js",
+  "icon": "icon.png",
+  "activationEvents": [
+    "onLanguage:metro-lang",
+    "onCommand:metro.openDoc"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "metro-lang",
+        "aliases": [
+          "MetroLang",
+          "metro"
+        ],
+        "extensions": [
+          ".metro",
+          ".m"
+        ],
+        "configuration": "./metro-language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "metro-lang",
+        "scopeName": "source.metro-lang",
+        "path": "./syntaxes/metro.tmLanguage.json"
+      }
+    ],
+    "configurationDefaults": {
+      "[metro-lang]": {
+        "editor.tabSize": 4,
+        "editor.insertSpaces": true,
+        "editor.detectIndentation": false,
+        "editor.suggest.showWords": false
+      }
+    },
+    "commands": [
+      {
+        "command": "metro.openDoc",
+        "title": "Metro: 打开 MetroLang 语言参考"
+      }
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://gitee.com/rabbitc999/metro-lang.git"
+  }
+}

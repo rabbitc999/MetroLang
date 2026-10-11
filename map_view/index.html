@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <title>交互式地铁线路图 · MetroLang 查看器</title>
+    <!-- 样式与脚本从原 Page/map.html 拆出来，绘图逻辑一行未改 -->
+    <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+    <div id="container">
+        <div id="loading">
+            正在加载地铁数据...
+        </div>
+    </div>
+    <div id="legend"></div>
+    <div class="tooltip" id="tooltip">
+        <div class="station-name"></div>
+        <div class="line-tag-container"></div>
+        <div class="express-container"></div>
+        <div class="pending-container"></div>
+        <div class="routing-container"></div>
+        <div class="other-names-container"></div>
+    </div>
+    <div class="tooltip" id="zone-tooltip">
+        <div class="zone-title"></div>
+        <div class="zone-meta"></div>
+        <div class="zone-attributes"></div>
+        <div class="zone-stations"></div>
+    </div>
+    <!-- 数据源工具栏：选 metro-lang 解析器产物或任意 JSON 文件 -->
+    <div id="controls">
+        <label>数据源
+            <select id="source-select">
+                <option value="auto">自动识别</option>
+                <option value="metro-lang">metro-lang 解析器（JSON v2）</option>
+                <option value="editor">地铁编辑器 JSON（旧格式）</option>
+            </select>
+        </label>
+        <label>解释器位置
+            <input type="text" id="interpreter-path" spellcheck="false" autocomplete="off"
+                   placeholder="metro-lang 可执行文件路径" />
+        </label>
+        <button type="button" id="pick-interpreter" title="在浏览器里只能拿到文件名，完整路径请手填">选择…</button>
+        <input type="file" id="interpreter-file" style="display:none" />
+        <label>选择文件
+            <input type="file" id="file-input" accept=".json,.m,.metro,application/json" />
+        </label>
+        <button type="button" id="copy-command" title="复制把当前源码编成 JSON 的命令">复制编译命令</button>
+        <span id="status">未加载数据</span>
+    </div>
+
+    <script src="js/d3.min.js"></script>
+    <script src="js/app.js"></script>
+    <script src="js/loader.js"></script>
+</body>
+</html>

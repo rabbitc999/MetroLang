@@ -1,0 +1,6 @@
+{% for t in p.transferTypes %}TRANSFER_TYPE {{ t.id }} {{ t.name }}
+{% if t.timeLine %}    TIME {{ t.time }}
+{% endif %}{% if t.statusLine %}    STATUS {{ t.status }}
+{% endif %}END_DEFINE
+
+{% endfor %}

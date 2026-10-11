@@ -1,0 +1,9 @@
+PROGRAM_DEFINE
+    KEY_CITY {{ p.keyCity }}
+{% if p.otherCities %}    OTHER_CITY {{ p.otherCities }}
+{% endif %}    VERSION {{ p.version }}
+    AUTHOR {{ p.author }}
+{% if p.createDate %}    CREATE_DATE {{ p.createDate }}
+{% endif %}{% if p.updateDate %}    UPDATE_DATE {{ p.updateDate }}
+{% endif %}END_DEFINE
+

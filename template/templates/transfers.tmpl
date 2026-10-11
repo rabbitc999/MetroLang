@@ -1,0 +1,6 @@
+{% for t in p.transfers %}TRANSFER_DEFINE {{ t.station }} {{ t.lineA }} {{ t.lineB }}
+{% if t.typeLine %}    STATUS {{ t.type }}
+{% endif %}{% if t.timeLine %}    TIME {{ t.time }}
+{% endif %}END_DEFINE
+
+{% endfor %}

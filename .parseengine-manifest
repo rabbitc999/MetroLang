@@ -1,0 +1,8 @@
+# ParseEngine generated files v1
+# `sh gen.sh` / `make gen` 产出的分析器与固化模板头都落在 build/ 里（见 .gitignore），
+# 这里登记的是"解析器源码"这一族生成物的名字，供外部工具识别。
+build/metro-lang/gen/parser.cpp
+build/metro-lang/gen/parser.hpp
+build/metro-lang/gen/parser_user.h
+build/metro-lang/gen/metro_templates.hpp
+build/metro-lang/gen/RESULT.md

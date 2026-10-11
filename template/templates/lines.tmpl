@@ -1,0 +1,24 @@
+{% for l in p.lines %}LINE_DEFINE {{ l.id }}
+    NAME {{ l.name }}
+    COLOR {{ l.color }}
+{% if l.cityLine %}    CITY {{ l.city }}
+{% endif %}{{ l.formationLines }}    MAXSPEED {{ l.maxspeed }}
+{% if l.openYearLine %}    OPEN_YEAR {{ l.openYear }}
+{% endif %}{% if l.powerLine %}    POWER {{ l.power }}
+{% endif %}{% if l.brakeLine %}    BRAKE {{ l.brake }}
+{% endif %}{{ l.linkLines }}{% if l.imageLine %}    IMAGE {{ l.image }}
+{% endif %}{% if l.disabled %}    DISABLE
+{% endif %}{% if l.special %}    SPECIAL
+{% endif %}{% if l.pendingLine %}    PENDING {{ l.pending }}
+{% endif %}{% for d in l.directions %}    DIRECTION_DEFINE {{ d.id }}{{ d.revSuffix }}
+{% if d.stationsLine %}        STATIONS {{ d.stations }}
+{% endif %}{% if d.distanceLine %}        {{ d.distanceLine }}
+{% endif %}{% if d.dwellLine %}        DWELL_TIME {{ d.dwell }}
+{% endif %}{% if d.loop %}        LOOP{% if d.directionType %} {{ d.directionType }}{% endif %}
+{% endif %}{% if d.future %}        IS_FUTURE TRUE
+{% endif %}{% if d.connectLine %}        CONNECT_STATION {{ d.connect }}
+{% endif %}{% if d.expressLine %}        EXPRESS_STOPS {{ d.express }}
+{% endif %}{{ d.routings }}    END_DEFINE
+{% endfor %}END_DEFINE
+
+{% endfor %}
