@@ -257,6 +257,16 @@ struct CompileResult {
 bool compileText(const std::string &text, Program &out, std::vector<std::string> &errors);
 
 /**
+ * @brief 把 `%IMPORT` 的 CSV 站表转成等价的 STATION_DEFINE 块。
+ *
+ * 供语言服务器等需要复刻 compileFile 的 CSV 装载行为的调用方使用。
+ *
+ * @param csvText CSV 全文（首行表头：站名/经度/纬度/城市）。
+ * @return `STATION_DEFINE … END_DEFINE` 块文本。
+ */
+std::string csvToStationBlock(const std::string &csvText);
+
+/**
  * @brief 编译 MetroLang 文件（先走 library/preprocess 的 % 指令与 %IMPORT）。
  * @param path 文件路径。
  * @param out 输出模型。

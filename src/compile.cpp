@@ -67,8 +67,7 @@ bool isNumber(const std::string &s) {
 }
 
 /** @brief 把 %IMPORT 的 CSV 转成 STATION_DEFINE 块。 */
-std::string csvToStations(const std::string &text) {
-    std::istringstream in(stripBom(text));
+std::string csvToStations(const std::string &text) {    std::istringstream in(stripBom(text));
     std::string line, out = "STATION_DEFINE\n";
     std::vector<std::string> head;
     int iName = 0, iLon = 1, iLat = 2, iCity = 3;
@@ -102,6 +101,8 @@ std::string csvToStations(const std::string &text) {
 }
 
 } // namespace
+
+std::string csvToStationBlock(const std::string &csvText) { return csvToStations(csvText); }
 
 bool compileFile(const std::string &path, Program &out, std::vector<std::string> &errors,
                  std::vector<std::string> *deps) {

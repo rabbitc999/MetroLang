@@ -4,6 +4,8 @@
  */
 #include "metro_model.hpp"
 
+#include "lsp.hpp"
+
 #include <cstdio>
 #include <fstream>
 #include <iostream>
@@ -38,7 +40,8 @@ void usage() {
                  "  decompile <file.json> [-o out.metro]    反编译为 MetroLang\n"
                  "  html <file.metro> [-o out.html]         生成自包含地图\n"
                  "  route <file.metro> --from A --to B      查询最短时间路径\n"
-                 "  check <file.metro>                      解析并打印统计\n"
+                 "  check <file.metro> [--diagnostics=json] 解析并打印统计；可输出 JSON 诊断\n"
+                 "  lsp                                     在标准输入输出上运行语言服务器\n"
                  "选项：--fewer-transfers  查询时优先少换乘；-q 安静；-h 帮助\n";
 }
 
@@ -50,7 +53,7 @@ int main(int argc, char **argv) {
 
     const std::string command = args[0];
     std::string file, out, from, to;
-    bool fewer = false, quiet = false;
+    bool fewer = false, quiet = false, diagnosticsJson = false;
     for (std::size_t i = 1; i < args.size(); ++i) {
         const std::string &a = args[i];
         if ((a == "-o" || a == "--out") && i + 1 < args.size()) out = args[++i];
@@ -58,11 +61,16 @@ int main(int argc, char **argv) {
         else if (a == "--to" && i + 1 < args.size()) to = args[++i];
         else if (a == "--fewer-transfers") fewer = true;
         else if (a == "-q" || a == "--quiet") quiet = true;
+        else if (a == "--diagnostics=json") diagnosticsJson = true;
         else if (!a.empty() && a[0] == '-') { std::cerr << "未知选项：" << a << "\n"; return 2; }
         else if (file.empty()) file = a;
         else { std::cerr << "多余参数：" << a << "\n"; return 2; }
     }
-    if (file.empty() && command != "help") { usage(); return 2; }
+    if (file.empty() && command != "help" && command != "lsp") { usage(); return 2; }
+
+    // 内嵌语言服务器：`lsp`（stdio）与 `check --diagnostics=json` 都在这条分支。
+    if (command == "lsp" || (command == "check" && diagnosticsJson))
+        return metro::runLspCommand({}, diagnosticsJson, file);
 
     if (command == "compile" || command == "decompile" || command == "html" ||
         command == "route" || command == "check") {

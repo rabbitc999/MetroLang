@@ -43,7 +43,7 @@ BUILD   := $(CURDIR)/build/metro-lang
 GEN     := $(BUILD)/gen
 BIN     := $(BUILD)/metro-lang
 
-INCS     := -I$(CURDIR) -I$(CURDIR)/include -I$(CURDIR)/preprocess -I$(CURDIR)/template -I$(CURDIR)/json -I$(GEN)
+INCS     := -I$(CURDIR) -I$(CURDIR)/include -I$(CURDIR)/preprocess -I$(CURDIR)/template -I$(CURDIR)/json -I$(CURDIR)/lsp -I$(GEN)
 
 # 文法生成器（ParseEngine）是**外部依赖**：本项目只有 .gram。按下面的顺序找，
 # 也可用 PARSER=<路径> 指定（gen.sh 用的是同一套候选顺序，两边保持一致）：
@@ -63,9 +63,11 @@ OBJS := \
 	$(BUILD)/obj/src/decompile.o \
 	$(BUILD)/obj/src/html.o \
 	$(BUILD)/obj/src/route.o \
+	$(BUILD)/obj/src/lsp.o \
 	$(BUILD)/obj/src/main.o \
 	$(BUILD)/obj/preprocess/preprocess.o \
 	$(BUILD)/obj/json/json.o \
+	$(BUILD)/obj/lsp/json.o \
 	$(BUILD)/obj/gen/parser.o
 
 TMPL_SRC := $(wildcard $(CURDIR)/template/templates/*.tmpl)
@@ -105,6 +107,10 @@ $(BUILD)/obj/preprocess/%.o: $(CURDIR)/preprocess/%.cpp
 	$(CXX) $(CXXFLAGS) $(INCS) -c $< -o $@
 
 $(BUILD)/obj/json/%.o: $(CURDIR)/json/%.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $(INCS) -c $< -o $@
+
+$(BUILD)/obj/lsp/%.o: $(CURDIR)/lsp/%.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $(INCS) -c $< -o $@
 

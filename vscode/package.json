@@ -1,7 +1,7 @@
 {
   "name": "metro-lang-editor",
   "displayName": "MetroLang",
-  "description": "MetroLang（.metro / .m）语言支持：语法高亮与块折叠（*_DEFINE / TRANSFER_TYPE / POLICY / ATTRIBUTES → END_*），命令打开语言参考。",
+  "description": "MetroLang（.metro / .m）语言支持：语法高亮、块折叠、编译器内嵌 LSP 诊断与地图预览。",
   "version": "1.0.0",
   "publisher": "rabbitc999",
   "author": {
@@ -25,7 +25,8 @@
   "icon": "icon.png",
   "activationEvents": [
     "onLanguage:metro-lang",
-    "onCommand:metro.openDoc"
+    "onCommand:metro.openDoc",
+    "onCommand:metro.previewMap"
   ],
   "contributes": {
     "languages": [
@@ -61,8 +62,36 @@
       {
         "command": "metro.openDoc",
         "title": "Metro: 打开 MetroLang 语言参考"
+      },
+      {
+        "command": "metro.previewMap",
+        "title": "Metro: 预览地图（编译当前文档）",
+        "icon": "$(map)"
+      },
+      {
+        "command": "metro.restartServer",
+        "title": "Metro: 重启语言服务器"
       }
-    ]
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "metro.previewMap",
+          "when": "resourceLangId == metro-lang",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "MetroLang",
+      "properties": {
+        "metro-lang.serverPath": {
+          "type": "string",
+          "default": "",
+          "description": "metro-lang 可执行文件路径；留空则按 工作区 build/metro-lang/ → 仓库 build/metro-lang/ 的顺序自动找。"
+        }
+      }
+    }
   },
   "repository": {
     "type": "git",
