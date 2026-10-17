@@ -123,6 +123,229 @@ double timeSeconds(std::size_t i) {
     return first;
 }
 
+/** @brief 词素 -> 小写三字母星期；不是星期返回空串。 */
+std::string dayOf(const std::string &word) {
+    const std::string w = upper(trimWs(word));
+    if (w == "MONDAY" || w == "MON") return "mon";
+    if (w == "TUESDAY" || w == "TUE") return "tue";
+    if (w == "WEDNESDAY" || w == "WED") return "wed";
+    if (w == "THURSDAY" || w == "THU") return "thu";
+    if (w == "FRIDAY" || w == "FRI") return "fri";
+    if (w == "SATURDAY" || w == "SAT") return "sat";
+    if (w == "SUNDAY" || w == "SUN") return "sun";
+    return std::string();
+}
+
+/**
+ * @brief 展开星期修饰符：`WORKDAY` / `WEEKEND` / `[MON, WED]` / 单个星期。
+ *
+ * 修饰符可能写在行尾，也可能被方括号括起来（括号本身不进 `g_args`），
+ * 所以逐个参数扫一遍，认得的都算。
+ *
+ * @param from 从第几个参数开始扫（前几个是 HH:mm 与数值）。
+ * @return 星期集合；一个也没有返回 `any = true` 的空集。
+ */
+DaySet daysFrom(std::size_t from) {
+    DaySet out;
+    for (std::size_t i = from; i < g_args.size(); ++i) {
+        const std::string w = upper(trimWs(g_args[i].text));
+        if (w == "WORKDAY" || w == "WEEKDAY") {
+            out.days.insert(out.days.end(), {"mon", "tue", "wed", "thu", "fri"});
+            continue;
+        }
+        if (w == "WEEKEND") {
+            out.days.insert(out.days.end(), {"sat", "sun"});
+            continue;
+        }
+        const std::string d = dayOf(w);
+        if (!d.empty()) out.days.push_back(d);
+    }
+    if (!out.days.empty()) {
+        std::sort(out.days.begin(), out.days.end());
+        out.days.erase(std::unique(out.days.begin(), out.days.end()), out.days.end());
+        out.any = false;
+    } else {
+        out.any = true;
+    }
+    return out;
+}
+
+/**
+ * @brief 解析 `HH:mm HH:mm` 两个时刻参数，返回"数值部分之后"的参数下标。
+ *
+ * 词法器把 `08:00` 整个吃掉当一个数值 token（冒号不进参数表），所以这里看到的是
+ * `08`、`00`、`09`、`00` 四个数字，中间**没有** `:`。为了同时兼容
+ * `PERIOD 8 30 9 0 120`（手写的两段式）这类写法，取数规则是：
+ *   - 若后面紧跟着 `:`，按 `小时 : 分钟` 三段式读；
+ *   - 否则按相邻两个数字读成 `小时 分钟`。
+ *
+ * @param start 起始参数下标。
+ * @param begin 输出起始时刻。
+ * @param end 输出结束时刻。
+ * @return 两个时刻之后的参数下标；解析失败返回 0。
+ */
+std::size_t parseTimePair(std::size_t start, std::string &begin, std::string &end) {
+    double values[2] = {0, 0};
+    std::size_t i = start;
+    for (int k = 0; k < 2; ++k) {
+        if (i >= g_args.size() || g_args[i].kind != 'n') return 0;
+        const double hour = g_args[i].num;
+        ++i;
+        double minute = 0.0;
+        if (i < g_args.size() && g_args[i].kind == ':') {
+            // 显式冒号：`8 : 30`。
+            ++i;
+            if (i < g_args.size() && g_args[i].kind == 'n') { minute = g_args[i].num; ++i; }
+        } else if (i < g_args.size() && g_args[i].kind == 'n') {
+            // 词法器吞掉冒号后的相邻数字：`8 30` 就是 8:30。
+            minute = g_args[i].num;
+            ++i;
+        }
+        values[k] = hour * 60.0 + minute;
+    }
+    char buffer[32];
+    for (int k = 0; k < 2; ++k) {
+        const int total = static_cast<int>(values[k] + 0.5);
+        std::snprintf(buffer, sizeof(buffer), "%02d:%02d", total / 60, total % 60);
+        (k == 0 ? begin : end) = buffer;
+    }
+    return i;
+}
+
+/** @brief `IS_FUTURE` / `FUTURE` 的值：缺省或非 FALSE 即为真。 */
+bool flagTrue(std::size_t i) {
+    return i >= g_args.size() || argKey(i) != "FALSE";
+}
+
+// 下面四个块处理器引用了「原样保留」与「取本行字符串参数」两个工具函数，
+// 它们的完整定义在文件靠后的位置（和别的块处理器放在一起）。这里先声明，
+// 免得为了顺序把语义层拆成两段。
+void keepRaw();
+std::vector<std::string> stringArgs();
+
+/**
+ * @brief 跳过 `PERIOD` 行里的前置标记词（`TIME_RANGE` / `VALUE` / `DAYS` …）。
+ *
+ * 两种写法都要认：
+ *   `PERIOD 07:00 09:00 120 WORKDAY`
+ *   `PERIOD TIME_RANGE 07:30 09:00 VALUE 1.6 WORKDAY`
+ *
+ * 标记词在词法上是标识符（`kind == 'i'`），从行首跳到第一个数字即可。
+ *
+ * @return 第一个数值参数的下标；整行没有数字返回 `g_args.size()`。
+ */
+std::size_t skipPeriodMarks() {
+    std::size_t i = 0;
+    while (i < g_args.size() && g_args[i].kind != 'n') ++i;
+    return i;
+}
+
+/** @brief 从第 from 个参数开始找第一个数值（用于 `VALUE 1.6` 这类带标记的值）。 */
+std::size_t nextNumber(std::size_t from) {
+    std::size_t i = from;
+    while (i < g_args.size() && g_args[i].kind != 'n') ++i;
+    return i;
+}
+
+/** @brief `HEADWAY_PROFILE 线路ID` 的 `PERIOD HH:mm HH:mm 秒数 [星期…]` 行。 */
+void lineHeadwayPeriod() {
+    if (g_stack.empty()) { keepRaw(); return; }
+    HeadwayProfile profile;
+    profile.lineId = g_stack.back().target;
+    if (profile.lineId.empty()) profile.lineId = argText(0);
+    if (profile.lineId.empty()) { keepRaw(); return; }
+    // 同一个线路可能被拆成多个块，按线路 ID 合并时段。
+    HeadwayProfile *slot = nullptr;
+    for (HeadwayProfile &h : g_program.headways)
+        if (h.lineId == profile.lineId) slot = &h;
+    if (slot == nullptr) {
+        g_program.headways.push_back(profile);
+        slot = &g_program.headways.back();
+    }
+    HeadwayPeriod period;
+    const std::size_t next = parseTimePair(skipPeriodMarks(), period.start, period.end);
+    if (next == 0) { keepRaw(); return; }
+    const std::size_t valueIdx = nextNumber(next);
+    if (valueIdx >= g_args.size()) { keepRaw(); return; }
+    period.seconds = static_cast<int>(timeSeconds(valueIdx) + 0.5);
+    period.days = daysFrom(valueIdx + 1);
+    slot->periods.push_back(std::move(period));
+}
+
+/** @brief `CROWD_PROFILE 方向ID` 的 `PERIOD HH:mm HH:mm 系数 [星期…]` 行。 */
+void lineCrowdPeriod() {
+    if (g_stack.empty()) { keepRaw(); return; }
+    const std::string dirId = g_stack.back().target.empty() ? argText(0) : g_stack.back().target;
+    if (dirId.empty()) { keepRaw(); return; }
+    CrowdProfile *slot = nullptr;
+    for (CrowdProfile &c : g_program.crowds)
+        if (c.dirId == dirId) slot = &c;
+    if (slot == nullptr) {
+        g_program.crowds.push_back(CrowdProfile{dirId, {}});
+        slot = &g_program.crowds.back();
+    }
+    CrowdPeriod period;
+    const std::size_t next = parseTimePair(skipPeriodMarks(), period.start, period.end);
+    if (next == 0) { keepRaw(); return; }
+    const std::size_t valueIdx = nextNumber(next);
+    if (valueIdx >= g_args.size()) { keepRaw(); return; }
+    period.factor = argNum(valueIdx, 1.0);
+    if (period.factor < 1.0) period.factor = 1.0;
+    period.days = daysFrom(valueIdx + 1);
+    slot->periods.push_back(std::move(period));
+}
+
+/** @brief `DWELL_TIME_DEFINE` 的 `NODE '站' 线路ID 秒` / `LINE` / `DIRECTION` 行。 */
+void lineDwell() {
+    DwellRule rule;
+    if (g_head == "NODE") {
+        std::vector<std::string> ss = stringArgs();
+        if (ss.empty()) { keepRaw(); return; }
+        rule.kind = DwellRule::Node;
+        rule.station = ss[0];
+        // 站名后面可能跟线路 ID（可能是标识符而不是字符串，`stringArgs` 收不到）。
+        // 按位置找：站名之后第一个非数字参数就是线路 ID。
+        bool seenStation = false;
+        for (const Val &v : g_args) {
+            if (!seenStation) {
+                if (v.kind == 's' || v.text == rule.station) seenStation = true;
+                continue;
+            }
+            if (v.kind == 'i') { rule.lineId = v.text; break; }
+        }
+    } else if (g_head == "LINE") {
+        rule.kind = DwellRule::Line;
+        rule.lineId = argText(0);
+    } else if (g_head == "DIRECTION") {
+        rule.kind = DwellRule::Direction;
+        rule.dirId = argText(0);
+    } else {
+        keepRaw();
+        return;
+    }
+    // 秒数是行内最后一个数值参数。
+    for (std::size_t i = g_args.size(); i > 0; --i) {
+        if (g_args[i - 1].kind == 'n') { rule.seconds = g_args[i - 1].num; break; }
+    }
+    if (rule.seconds <= 0) { keepRaw(); return; }
+    g_program.dwellRules.push_back(std::move(rule));
+}
+
+/** @brief `SPEED_LIMIT_DEFINE 方向ID` 的 `NODE '站A' '站B' 速度` 行。 */
+void lineSpeedLimit() {
+    std::vector<std::string> ss = stringArgs();
+    if (ss.size() < 2) { keepRaw(); return; }
+    SpeedLimitRule rule;
+    rule.dirId = g_stack.empty() ? std::string() : g_stack.back().target;
+    rule.from = ss[0];
+    rule.to = ss[1];
+    for (std::size_t i = g_args.size(); i > 0; --i) {
+        if (g_args[i - 1].kind == 'n') { rule.kmh = g_args[i - 1].num; break; }
+    }
+    if (rule.kmh <= 0) { keepRaw(); return; }
+    g_program.speedLimits.push_back(std::move(rule));
+}
+
 /** @brief 把当前行还原成一句可读文本（未建模命令原样保留用）。 */
 std::string lineText() {
     std::string out = g_headRaw.empty() ? g_head : g_headRaw;
@@ -176,10 +399,6 @@ bool isRawBlock(BlockKind kind) {
         case MB_VIRTUAL_TRANSFER:
         case MB_LINE_TEMPLATE:
         case MB_DIRECTION_TEMPLATE:
-        case MB_HEADWAY_PROFILE:
-        case MB_CROWD_PROFILE:
-        case MB_DWELL_DEFINE:
-        case MB_SPEED_LIMIT_DEFINE:
         case MB_LABEL_DEFINE:
         case MB_OPERATOR_DEFINE:
         case MB_BACKGROUND_DEFINE:
@@ -263,11 +482,25 @@ void lineStation() {
     if (g_head == "NODE") {
         Station s;
         s.name = argText(0);
+        // 两种写法都认：
+        //   NODE '甲站' COORD 113.30 23.10      （带标记）
+        //   NODE '甲站' 113.30 23.10            （位置参数，csv 转换与手写都常见）
+        bool sawMark = false;
         for (std::size_t i = 1; i < g_args.size(); ++i) {
             if (isMark(g_args[i], "COORD")) {
+                sawMark = true;
                 if (i + 2 < g_args.size()) { s.lon = g_args[i + 1].num; s.lat = g_args[i + 2].num; s.hasCoord = true; }
             } else if (isMark(g_args[i], "CITY")) {
+                sawMark = true;
                 if (i + 1 < g_args.size()) s.city = g_args[i + 1].text;
+            }
+        }
+        if (!sawMark) {
+            // 没有标记：第 2、3 个参数就是经纬度。
+            if (g_args.size() >= 3 && g_args[1].kind == 'n' && g_args[2].kind == 'n') {
+                s.lon = g_args[1].num;
+                s.lat = g_args[2].num;
+                s.hasCoord = true;
             }
         }
         // 同名站点合并（后出现的坐标 / 城市覆盖）
@@ -419,7 +652,7 @@ void lineDirection() {
         d->loop = true;
         if (g_args.size() > 0) d->directionType = argKey(0);
     } else if (g_head == "IS_FUTURE" || g_head == "FUTURE") {
-        d->isFuture = g_args.empty() || argKey(0) != "FALSE";
+        d->isFuture = flagTrue(0);
     } else if (g_head == "CONNECT_STATION") d->connectStation = argText(0);
     else if (g_head == "EXPRESS_STOPS") { for (auto &s : stringArgs()) d->expressStops.push_back(s); }
     else if (g_head == "VIA") { for (auto &s : stringArgs()) d->viaDirections.push_back(s); }
@@ -439,14 +672,29 @@ void lineDirection() {
             // 立即继承并反转
             if (const Direction *src = const_cast<Program &>(g_program).findDirection(d->revOf)) {
                 Direction copy = *src;
-                std::reverse(copy.stations.begin(), copy.stations.end());
-                // 反转后站点顺序变了，距离要跟着走：第 i 段的距离变成原来第 i+1 段的。
-                // hasNext 也必须一起搬，否则"原本是末站"的那一站反转后仍然被当成末站。
-                for (std::size_t i = 0; i + 1 < copy.stations.size(); ++i) {
-                    copy.stations[i].next = copy.stations[i + 1].next;
-                    copy.stations[i].hasNext = copy.stations[i + 1].hasNext;
+                // 反转前先把每站「到下一站」的距离连同 hasNext 一起存下来：
+                // 反转后第 i 段的距离就等于原来第 (n-2-i) 段的距离。
+                std::vector<double> oldNext;
+                std::vector<char> oldHas;
+                oldNext.reserve(copy.stations.size());
+                oldHas.reserve(copy.stations.size());
+                for (const DirStation &s : copy.stations) {
+                    oldNext.push_back(s.next);
+                    oldHas.push_back(s.hasNext ? 1 : 0);
                 }
-                if (!copy.stations.empty()) { copy.stations.back().next = 0; copy.stations.back().hasNext = false; }
+                std::reverse(copy.stations.begin(), copy.stations.end());
+                const std::size_t n = copy.stations.size();
+                for (std::size_t i = 0; i < n; ++i) {
+                    if (i + 1 < n) {
+                        // 新第 i 段 = 原来第 (n-2-i) 段（原来那一段的方向正好相反）。
+                        copy.stations[i].next = oldNext[n - 2 - i];
+                        copy.stations[i].hasNext = oldHas[n - 2 - i] != 0;
+                    } else {
+                        // 原来的首站变成末站：它后面没有站了。
+                        copy.stations[i].next = 0;
+                        copy.stations[i].hasNext = false;
+                    }
+                }
                 d->stations = copy.stations;
                 d->loop = copy.loop;
                 d->isFuture = copy.isFuture;
@@ -590,6 +838,10 @@ void dispatchLine() {
         case MB_LINE: lineLine(); break;
         case MB_DIRECTION: lineDirection(); break;
         case MB_FACILITY_DEFINE: lineFacility(); break;
+        case MB_HEADWAY_PROFILE: lineHeadwayPeriod(); break;
+        case MB_CROWD_PROFILE: lineCrowdPeriod(); break;
+        case MB_DWELL_DEFINE: lineDwell(); break;
+        case MB_SPEED_LIMIT_DEFINE: lineSpeedLimit(); break;
         default: lineAny(); break;
     }
 }

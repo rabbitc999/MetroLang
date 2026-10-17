@@ -10,6 +10,10 @@
  *
  * LSP 能力：
  *   - textDocument/didOpen · didChange · didClose → publishDiagnostics；
+ *   - textDocument/hover：把光标下的标识符解析成模型实体，显示它的类型、定义与属性
+ *     （线路 / 车站 / 方向 / 运营参数）；
+ *   - textDocument/definition：跳到该标识符在本文档里的定义行；documentSymbol
+ *     把顶级块列成大纲，供编辑器导航；
  *   - 自定义请求 `metro/previewMap`：把当前文档编译成自包含 HTML 地图，
  *     供 VS Code 插件的"预览地图"命令放进 Webview（metro_editor 同款渲染）。
  *
@@ -19,6 +23,7 @@
 #include "metro_model.hpp"
 
 #include "lsp.hpp"
+#include "lsp_index.hpp"
 
 #include "preprocess.hpp"
 
@@ -28,6 +33,7 @@
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #if defined(_WIN32)
 #include <fcntl.h>
 #include <io.h>
@@ -62,6 +68,8 @@ struct Doc {
     std::string text;       ///< 最近一次同步的全文。
     std::vector<Diag> diags;///< 最近一次检查的诊断。
     bool ok = false;        ///< 最近一次编译是否通过。
+    metro::Program program; ///< 最近一次成功编译的模型（失败时保留上一次的）。
+    metro::SourceIndex index; ///< 语义索引（hover / definition 用）。
 };
 
 /**
@@ -245,6 +253,43 @@ std::string frameMessage(const std::string &payload) {
     return "Content-Length: " + std::to_string(payload.size()) + "\r\n\r\n" + payload;
 }
 
+/** @brief `["markdown", "plaintext"]`：hover 的内容格式协商。 */
+Json markdownArray() {
+    Json list = array();
+    list.push(Json::string("markdown"));
+    list.push(Json::string("plaintext"));
+    return list;
+}
+
+/** @brief 补全触发字符：空格后是块头的常见位置，`'` 之后是站名。 */
+Json triggerArray() {
+    Json list = array();
+    list.push(Json::string(" "));
+    list.push(Json::string("'"));
+    return list;
+}
+
+/** @brief LSP 的 Position → 行 / 字节列。 */
+void positionOf(const Json &params, int &outLine, std::size_t &outColumn) {
+    const Json position = params.get("position");
+    outLine = static_cast<int>(position.getInteger("line", 0));
+    outColumn = static_cast<std::size_t>(std::max<long long>(0, position.getInteger("character", 0)));
+}
+
+/** @brief 造一个 LSP Range。 */
+Json rangeOf(int line, std::size_t begin, std::size_t end) {
+    Json start = object();
+    start.set("line", Json::integer(line));
+    start.set("character", Json::integer(static_cast<long long>(begin)));
+    Json finish = object();
+    finish.set("line", Json::integer(line));
+    finish.set("character", Json::integer(static_cast<long long>(std::max(begin, end))));
+    Json range = object();
+    range.set("start", std::move(start));
+    range.set("end", std::move(finish));
+    return range;
+}
+
 /**
  * @brief 从输入流读一帧带 Content-Length 的报文。
  *
@@ -305,9 +350,20 @@ public:
             sync.set("change", Json::integer(1));  // 全量同步
             Json capabilities = object();
             capabilities.set("textDocumentSync", std::move(sync));
+            // 语义提示：光标悬停看标识符的类型与定义。
+            Json hover = object();
+            hover.set("contentFormat", markdownArray());
+            capabilities.set("hoverProvider", std::move(hover));
+            // 跳转到定义 + 大纲。
+            capabilities.set("definitionProvider", Json::boolean(true));
+            capabilities.set("documentSymbolProvider", Json::boolean(true));
+            // 补全：块头关键字与站名 / 线路 ID。
+            Json completion = object();
+            completion.set("triggerCharacters", triggerArray());
+            capabilities.set("completionProvider", std::move(completion));
             Json info = object();
             info.set("name", Json::string("metro-lang"));
-            info.set("version", Json::string("1.0.0"));
+            info.set("version", Json::string("1.1.0"));
             Json result = object();
             result.set("capabilities", std::move(capabilities));
             result.set("serverInfo", std::move(info));
@@ -337,7 +393,14 @@ public:
             }
             Doc &doc = documents_[uri];
             doc.text = text;
-            doc.ok = checkText(text, directoryOfUri(uri), doc.diags);
+            metro::Program program;
+            std::vector<Diag> diags;
+            doc.ok = compileEditor(text, directoryOfUri(uri), diags, &program);
+            // 编译失败时索引也要重建：标识符提示恰恰在写错的时候最有用，
+            // 此时沿用上一次成功的模型（没有的话就是空模型，只认关键字）。
+            if (doc.ok) doc.program = std::move(program);
+            doc.diags = std::move(diags);
+            doc.index.build(doc.program, doc.text);
             Json notification = publishDiagnostics(uri, doc);
             return frameMessage(notification.dump());
         }
@@ -353,6 +416,223 @@ public:
             notification.set("method", Json::string("textDocument/publishDiagnostics"));
             notification.set("params", std::move(paramsOut));
             return frameMessage(notification.dump());
+        }
+
+        // ---- 语义提示：悬停看标识符的类型 / 定义 / 属性 ----
+        if (method == "textDocument/hover") {
+            Doc *doc = findDoc(params);
+            if (doc == nullptr) return frameMessage(response(requestId, Json::null()).dump());
+            int line = 0;
+            std::size_t column = 0;
+            positionOf(params, line, column);
+            const metro::IndexEntry *entry = doc->index.lookup(line, column);
+            if (entry == nullptr) return frameMessage(response(requestId, Json::null()).dump());
+
+            // hover 的内容：一行签名（代码块）+ markdown 说明 + 定义位置。
+            std::string text = "```metrolang\n" + entry->signature + "\n```\n\n" + entry->doc;
+            if (!entry->declaration)
+                text += "\n\n---\n定义于第 " + std::to_string(entry->line + 1) + " 行（`" +
+                        entry->kind + "`）";
+            else
+                text += "\n\n---\n*此处即定义*（`" + entry->kind + "`）";
+
+            Json contents = object();
+            contents.set("kind", Json::string("markdown"));
+            contents.set("value", Json::string(text));
+            Json result = object();
+            result.set("contents", std::move(contents));
+            result.set("range", rangeOf(entry->line, entry->column,
+                                        entry->column + entry->length));
+            return frameMessage(response(requestId, std::move(result)).dump());
+        }
+
+        // ---- 跳转到定义：本文件里所有同名定义 ----
+        if (method == "textDocument/definition") {
+            Doc *doc = findDoc(params);
+            if (doc == nullptr) return frameMessage(response(requestId, array()).dump());
+            int line = 0;
+            std::size_t column = 0;
+            positionOf(params, line, column);
+            const metro::IndexEntry *entry = doc->index.lookup(line, column);
+            const std::string uri = documentUri(params);
+            Json locations = array();
+            if (entry != nullptr) {
+                for (const metro::IndexEntry *candidate : doc->index.definitionsOf(entry->name)) {
+                    if (!candidate->declaration) continue;
+                    Json location = object();
+                    location.set("uri", Json::string(uri));
+                    location.set("range", rangeOf(candidate->line, candidate->column,
+                                                  candidate->column + candidate->length));
+                    locations.push(std::move(location));
+                }
+                // 引用处只找到引用（模型里没有对应定义）：退回自己，至少把光标留下。
+                if (locations.size() == 0) {
+                    Json location = object();
+                    location.set("uri", Json::string(uri));
+                    location.set("range", rangeOf(entry->line, entry->column,
+                                                  entry->column + entry->length));
+                    locations.push(std::move(location));
+                }
+            }
+            return frameMessage(response(requestId, std::move(locations)).dump());
+        }
+
+        // ---- 大纲：把定义类记录按行顺序列出来 ----
+        if (method == "textDocument/documentSymbol") {
+            Doc *doc = findDoc(params);
+            if (doc == nullptr) return frameMessage(response(requestId, array()).dump());
+            Json symbols = array();
+            for (const metro::IndexEntry &entry : doc->index.entries()) {
+                if (!entry.declaration) continue;
+                Json symbol = object();
+                symbol.set("name", Json::string(entry.name));
+                // 1 File 2 Module 3 Namespace 4 Package 5 Class 6 Method 7 Property
+                // 8 Field 9 Constructor 10 Enum 11 Interface 12 Function 13 Variable
+                // 14 Constant 15 String 16 Number 17 Boolean 18 Array 19 Object
+                // 20 Key 21 Null 22 EnumMember 23 Struct 24 Event 25 Operator 26 TypeParameter
+                long long kind = 13;  // Variable
+                if (entry.kind == "line") kind = 5;         // Class
+                else if (entry.kind == "station") kind = 23; // Struct
+                else if (entry.kind == "direction") kind = 12; // Function
+                else if (entry.kind == "operation") kind = 14; // Constant
+                symbol.set("kind", Json::integer(kind));
+                symbol.set("detail", Json::string(entry.kind));
+                symbol.set("range", rangeOf(entry.line, 0, 0));
+                symbol.set("selectionRange",
+                           rangeOf(entry.line, entry.column, entry.column + entry.length));
+                symbols.push(std::move(symbol));
+            }
+            return frameMessage(response(requestId, std::move(symbols)).dump());
+        }
+
+        // ---- 补全：块头关键字 + 站名 + 线路 ID ----
+        if (method == "textDocument/completion") {
+            Doc *doc = findDoc(params);
+            if (doc == nullptr) return frameMessage(response(requestId, array()).dump());
+            Json items = array();
+            for (const metro::IndexEntry &entry : doc->index.entries()) {
+                if (!entry.declaration) continue;
+                Json item = object();
+                item.set("label", Json::string(entry.name));
+                item.set("kind", Json::integer(entry.kind == "station" ? 23 : 5));
+                item.set("detail", Json::string(entry.signature));
+                item.set("documentation", Json::string(entry.doc));
+                items.push(std::move(item));
+            }
+            return frameMessage(response(requestId, std::move(items)).dump());
+        }
+
+        // 自定义请求：路线查询（与 `metro-lang route` 同一个 planRoute）。
+        if (method == "metro/route") {
+            Doc *doc = findDoc(params);
+            if (doc == nullptr)
+                return frameMessage(errorResponse(requestId, -32602, "未打开的文档").dump());
+            metro::Program program;
+            std::vector<Diag> diags;
+            if (!compileEditor(doc->text, directoryOfUri(documentUri(params)), diags, &program)) {
+                Json result = object();
+                result.set("ok", Json::boolean(false));
+                result.set("error", Json::string(diags.empty() ? "编译失败" : diags.front().message));
+                return frameMessage(response(requestId, std::move(result)).dump());
+            }
+            metro::RouteOptions options;
+            const std::string clock = params.getString("time");
+            if (!clock.empty()) {
+                int hh = 0, mm = 0;
+                if (std::sscanf(clock.c_str(), "%d:%d", &hh, &mm) == 2 && hh >= 0 && hh < 24 &&
+                    mm >= 0 && mm < 60) {
+                    std::time_t now = std::time(nullptr);
+                    std::tm local{};
+#if defined(_WIN32)
+                    localtime_s(&local, &now);
+#else
+                    localtime_r(&now, &local);
+#endif
+                    local.tm_hour = hh;
+                    local.tm_min = mm;
+                    local.tm_sec = 0;
+                    local.tm_isdst = -1;
+                    options.timestamp = static_cast<std::int64_t>(std::mktime(&local));
+                }
+            }
+            const metro::RouteResult route =
+                metro::planRoute(program, params.getString("from"), params.getString("to"), options);
+            Json result = object();
+            result.set("ok", Json::boolean(route.found));
+            if (!route.found) {
+                result.set("error", Json::string(route.error));
+                return frameMessage(response(requestId, std::move(result)).dump());
+            }
+            result.set("guidance", Json::string(route.guidance()));
+            result.set("distanceKm", Json::number(route.distanceKm));
+            result.set("totalSeconds", Json::number(route.totalSeconds));
+            result.set("fare", Json::number(route.fare));
+            result.set("transfers", Json::integer(route.transfers));
+            // 输出面板里逐行显示，格式与 CLI 的文本输出一致。
+            Json lines = array();
+            char buffer[256];
+            for (const metro::RouteSegment &segment : route.segments) {
+                std::snprintf(buffer, sizeof buffer, "%s（开往 %s）  %s → %s  %d 站 / %.2f km",
+                              segment.lineName.c_str(), segment.towards.c_str(),
+                              segment.from.c_str(), segment.to.c_str(), segment.stations,
+                              segment.distanceKm);
+                lines.push(Json::string(buffer));
+            }
+            std::snprintf(buffer, sizeof buffer,
+                          "合计 %.2f km，换乘 %d 次，%d 站；总计 %ld 分 %ld 秒；票价 %.1f 元",
+                          route.distanceKm, route.transfers, route.stops,
+                          static_cast<long>(route.totalSeconds / 60),
+                          static_cast<long>(route.totalSeconds) % 60, route.fare);
+            lines.push(Json::string(buffer));
+            result.set("lines", std::move(lines));
+            return frameMessage(response(requestId, std::move(result)).dump());
+        }
+
+        // 自定义请求：数据预览（线路 / 车站 / 换乘 / 运营规则 / 未建模行）。
+        if (method == "metro/dataSummary") {
+            Doc *doc = findDoc(params);
+            if (doc == nullptr)
+                return frameMessage(errorResponse(requestId, -32602, "未打开的文档").dump());
+            metro::Program program;
+            std::vector<Diag> diags;
+            if (!compileEditor(doc->text, directoryOfUri(documentUri(params)), diags, &program)) {
+                Json result = object();
+                result.set("ok", Json::boolean(false));
+                result.set("error", Json::string(diags.empty() ? "编译失败" : diags.front().message));
+                return frameMessage(response(requestId, std::move(result)).dump());
+            }
+            std::size_t directions = 0, stationCount = 0;
+            for (const metro::Line &line : program.lines) directions += line.directions.size();
+            for (const metro::Station &station : program.stations)
+                if (station.hasCoord) ++stationCount;
+
+            Json rows = array();
+            auto addRow = [&rows](const char *name, const std::string &value) {
+                Json row = array();
+                row.push(Json::string(name));
+                row.push(Json::string(value));
+                rows.push(std::move(row));
+            };
+            addRow("主城市", program.keyCity.empty() ? "（未设置）" : program.keyCity);
+            addRow("线路", std::to_string(program.lines.size()));
+            addRow("车站", std::to_string(program.stations.size()));
+            addRow("有坐标的站", std::to_string(stationCount) + " / " +
+                                     std::to_string(program.stations.size()));
+            addRow("方向", std::to_string(directions));
+            addRow("换乘规则", std::to_string(program.transfers.size()));
+            addRow("运营时间", std::to_string(program.openTimes.size()));
+            addRow("发车间隔表", std::to_string(program.headways.size()) + " 条线路");
+            addRow("拥挤度表", std::to_string(program.crowds.size()) + " 个方向");
+            addRow("停站覆盖", std::to_string(program.dwellRules.size()) + " 条");
+            addRow("区间限速", std::to_string(program.speedLimits.size()) + " 条");
+            addRow("特殊线路票价", std::to_string(program.specialLines.size()) + " 条");
+            addRow("票价阶梯", std::to_string(program.segments.size()) + " 档");
+            addRow("未建模块", std::to_string(program.raw.size()) + " 行");
+
+            Json result = object();
+            result.set("ok", Json::boolean(true));
+            result.set("rows", std::move(rows));
+            return frameMessage(response(requestId, std::move(result)).dump());
         }
 
         // 自定义请求：把当前文档编译成自包含 HTML 地图（metro_editor 同款渲染）。
@@ -407,6 +687,19 @@ private:
         message.set("error", std::move(error));
         return message;
     }
+    /** @brief 取 `params.textDocument.uri`。 */
+    static std::string documentUri(const Json &params) {
+        return params.get("textDocument").getString("uri");
+    }
+
+    /** @brief 按 URI 找已打开文档；没有返回 nullptr。 */
+    Doc *findDoc(const Json &params) {
+        const std::string uri = documentUri(params);
+        if (uri.empty()) return nullptr;
+        const auto found = documents_.find(uri);
+        return found == documents_.end() ? nullptr : &found->second;
+    }
+
     /** @brief publishDiagnostics 通知。 */
     Json publishDiagnostics(const std::string &uri, const Doc &doc) const {
         Json items = array();

@@ -8,6 +8,7 @@
  */
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -179,7 +180,74 @@ struct LinearExtension { bool present = false; double threshold = 0, base = 0, r
 struct TransferDiscount { bool enabled = false; bool present = false; double amount = 0; int timeLimit = 0; };
 
 /** @brief 特殊线路票价。 */
-struct SpecialLineFare { std::string lineId; bool all = false; double fare = 0; std::string from, to; };
+struct SpecialLineFare {
+    std::string lineId;      ///< 线路 ID。
+    bool all = false;        ///< `ALL 票价`：整条线路一口价。
+    double fare = 0.0;       ///< 票价（`ALL` 时是统一价）。
+    std::string from;        ///< `SEGMENT` 写法的起点站。
+    std::string to;          ///< `SEGMENT` 写法的终点站。
+    bool hasDefaultFare = false;   ///< 是否给了独立起步价。
+    double defaultFare = 0.0;      ///< 独立起步价。
+    std::vector<PriceSegment> segments; ///< 独立区间表。
+};
+
+/** @brief 一周里的星期几（与 `PERIOD` 的星期修饰符对应）。 */
+struct DaySet {
+    bool any = false;                ///< 未指定星期（= 每天）。
+    std::vector<std::string> days;   ///< 小写三字母星期：mon/tue/wed/thu/fri/sat/sun。
+    /** @brief 判断某个星期（小写三字母）是否命中。 @param d 星期。 @return 命中返回 true。 */
+    bool matches(const std::string &d) const;
+};
+
+/**
+ * @brief `HEADWAY_PROFILE` 的一条时段：某时间段内的发车间隔。
+ *
+ * 对应 `PERIOD HH:mm HH:mm 秒数 [星期修饰符]`；命中规则是**第一条**匹配的时段，
+ * 与 metro_editor 的 `SimTimeCalculator.FindHeadway` 同口径。
+ */
+struct HeadwayPeriod {
+    std::string start;  ///< 起始时刻 `HH:mm`。
+    std::string end;    ///< 结束时刻 `HH:mm`（不含）。
+    int seconds = 0;    ///< 发车间隔（秒）。
+    DaySet days;        ///< 适用星期。
+};
+
+/** @brief 一条 `HEADWAY_PROFILE 线路ID`：某条线路的分时段发车间隔。 */
+struct HeadwayProfile {
+    std::string lineId;                  ///< 线路 ID。
+    std::vector<HeadwayPeriod> periods;  ///< 时段表。
+};
+
+/** @brief `CROWD_PROFILE` 的一条时段：某时间段内的拥挤度系数。 */
+struct CrowdPeriod {
+    std::string start;  ///< 起始时刻 `HH:mm`。
+    std::string end;    ///< 结束时刻 `HH:mm`（不含）。
+    double factor = 1.0;///< 拥挤度系数（≥ 1.0，平均需等待的列车趟数）。
+    DaySet days;        ///< 适用星期。
+};
+
+/** @brief 一条 `CROWD_PROFILE 方向ID`：某个方向的拥挤度。 */
+struct CrowdProfile {
+    std::string dirId;                 ///< 方向 ID。
+    std::vector<CrowdPeriod> periods;  ///< 时段表。
+};
+
+/** @brief `DWELL_TIME_DEFINE` 的一条：站点 / 方向 / 线路级的停站时间。 */
+struct DwellRule {
+    enum Kind { Node, Direction, Line } kind = Node; ///< 生效范围。
+    std::string station;   ///< kind == Node 时的站名。
+    std::string dirId;     ///< kind == Direction 时的方向 ID。
+    std::string lineId;    ///< kind == Line 时的线路 ID。
+    double seconds = 0.0;  ///< 停站时间（秒）。
+};
+
+/** @brief `SPEED_LIMIT_DEFINE` 的一条区间限速。 */
+struct SpeedLimitRule {
+    std::string dirId;     ///< 方向 ID。
+    std::string from;      ///< 起点站。
+    std::string to;        ///< 终点站。
+    double kmh = 0.0;      ///< 限速（km/h）。
+};
 
 /** @brief 一条未建模但原样保留的语句。 */
 struct RawLine { std::string text; };
@@ -213,6 +281,11 @@ struct Program {
     std::vector<Transfer> transfers;           ///< 换乘规则。
     std::vector<OpenTime> openTimes;           ///< 运营时间。
 
+    std::vector<HeadwayProfile> headways;      ///< 分时段发车间隔（HEADWAY_PROFILE）。
+    std::vector<CrowdProfile> crowds;          ///< 分时段拥挤度（CROWD_PROFILE）。
+    std::vector<DwellRule> dwellRules;         ///< 停站时间覆盖（DWELL_TIME_DEFINE）。
+    std::vector<SpeedLimitRule> speedLimits;   ///< 区间限速（SPEED_LIMIT_DEFINE）。
+
     std::vector<RawLine> raw;                  ///< 未建模语句，原样保留。
 
     /** @brief 按站名查站点（可写）。 @param name 站名。 @return 指针；没有返回 nullptr。 */
@@ -221,6 +294,8 @@ struct Program {
     const Station *findStation(const std::string &name) const;
     /** @brief 按线路 ID 查线路（可写）。 @param id 线路 ID。 @return 指针；没有返回 nullptr。 */
     Line *findLine(const std::string &id);
+    /** @brief 按线路 ID 查线路（只读）。 @param id 线路 ID。 @return 指针；没有返回 nullptr。 */
+    const Line *findLine(const std::string &id) const;
     /** @brief 按方向 ID 查方向（可写）。 @param id 方向 ID。 @return 指针；没有返回 nullptr。 */
     Direction *findDirection(const std::string &id);
     /** @brief 按类型 ID 查换乘类型（可写）。 @param id 类型 ID。 @return 指针；没有返回 nullptr。 */
@@ -311,19 +386,224 @@ std::string toHtml(const Program &program);
 struct RouteOptions {
     double transferPenalty = 0.0;    ///< 每次换乘额外惩罚（秒）。
     bool preferFewerTransfers = false; ///< 优先少换乘。
+
+    /**
+     * @brief 出行时间点（unix 秒，**本地时刻**的解释见下）。
+     *
+     * 发车间隔与拥挤度都按时段查表，所以查询时必须有一个"几点出发"。
+     * 传 0 表示用当前时间；只用到 `HH:mm` 与星期，不看时区。
+     */
+    std::int64_t timestamp = 0;
+    bool excludeSpecial = false;     ///< 不乘坐特殊线路（机场线 / 磁悬浮等）。
+};
+
+/** @brief 行程里的一个乘车区段：同一方向连续乘坐的部分。 */
+struct RouteSegment {
+    std::string lineId;            ///< 线路 ID。
+    std::string lineName;          ///< 线路显示名（跨城市时带城市前缀）。
+    std::string color;             ///< 线路颜色 `#RRGGBB`。
+    std::string dirId;             ///< 方向 ID。
+    std::string towards;           ///< "开往 ……" 的终点，环线是 `xx（内环）`。
+    std::string from;              ///< 上车站。
+    std::string to;                ///< 下车站。
+    int stations = 0;              ///< 乘坐站数（= 站数 - 1）。
+    double distanceKm = 0.0;       ///< 本段里程（km）。
+    double runSeconds = 0.0;       ///< 纯区间运行时间（含中间站停站）。
+    bool outStationTransfer = false; ///< 该段起点是否出站换乘。
+    std::vector<std::string> stationNames; ///< 本段经过的站（含首末）。
+};
+
+/** @brief 一次行程的完整结果。 */
+struct RouteResult {
+    bool found = false;            ///< 是否找到路径。
+    std::string error;             ///< 失败原因。
+    std::string from;              ///< 起点站。
+    std::string to;                ///< 终点站。
+
+    std::vector<RouteSegment> segments; ///< 乘车区段。
+    std::vector<std::string> stations;  ///< 按顺序经过的站（含换乘站重复出现）。
+
+    double distanceKm = 0.0;       ///< 总里程。
+    int transfers = 0;             ///< 换乘次数。
+    int stops = 0;                 ///< 总乘坐站数。
+
+    double runSeconds = 0.0;       ///< 区间运行 + 中间站停站。
+    double transferWalkSeconds = 0.0; ///< 换乘步行时间合计。
+    double waitSeconds = 0.0;      ///< 候车等待合计（含起点首班车）。
+    double entrySeconds = 0.0;     ///< 进出站时间（两端，2 × ENTRY_TIME）。
+    double totalSeconds = 0.0;     ///< 总耗时。
+
+    double fare = 0.0;             ///< 票价（元）。
+    double specialFare = 0.0;      ///< 其中特殊线路的部分。
+    std::string fareNote;          ///< 票价说明（为什么是这个价）。
+    std::string clock;             ///< 查询时刻 `HH:mm`（发车间隔/拥挤度按它取）。
+
+    /** @brief 可读的乘车指引（"在【A】上车，先乘坐开往……"）。 @return 文本。 */
+    std::string guidance() const;
 };
 
 /**
- * @brief 查询最短时间路径。
- * @param program 程序模型。
- * @param from 起点站。
- * @param to 终点站。
+ * @brief 规划两站之间的行程（时间最短，口径对齐 metro_editor 的 SimTimeCalculator）。
+ *
+ * 边代价 = 区间运行时间（物理模型）+ 停站 + 换乘步行 + 候车 `T/2 + t + (C-1)T`。
+ * A* 的启发式取两站球面距离 / 全网最高速度，与边同量纲。
+ *
+ * @param program 编译好的模型。
+ * @param from 起点站名（会先做一次宽松匹配）。
+ * @param to 终点站名。
  * @param options 选项。
- * @param error 输出错误。
- * @return 可读路径文本；失败返回空串并写 error。
+ * @return 行程结果；`found == false` 时 `error` 有原因。
  */
-std::string queryRoute(const Program &program, const std::string &from, const std::string &to,
-                       const RouteOptions &options, std::string &error);
+RouteResult planRoute(const Program &program, const std::string &from, const std::string &to,
+                      const RouteOptions &options);
+
+/**
+ * @brief 行程的 JSON（`route --json`；VS Code 插件与查看器共用）。
+ * @param r 行程结果。
+ * @return JSON 文本。
+ */
+std::string toJson(const RouteResult &r);
+
+/**
+ * @brief 站名宽松匹配：精确 → 忽略大小写 → 前缀 → 包含。
+ * @param program 模型。
+ * @param input 用户输入。
+ * @return 匹配到的站名；没有返回空串。
+ */
+std::string matchStationName(const Program &program, const std::string &input);
+
+/**
+ * @brief 规划**只按时间**最小的行程（和 planRoute 同一套边代价，入口更直接）。
+ *
+ * `planRoute` 已经做了票价与分段汇总，这里是它的内核版本，供通勤矩阵等
+ * 只关心秒数的调用方使用。
+ *
+ * @param program 模型。
+ * @param from 起点站名。
+ * @param to 终点站名。
+ * @param options 选项。
+ * @param outSeconds 输出总耗时（秒）。
+ * @return 找到路径返回 true。
+ */
+bool shortestSeconds(const Program &program, const std::string &from, const std::string &to,
+                     const RouteOptions &options, double &outSeconds);
+
+/**
+ * @brief 计算票价（口径对齐 metro_editor 的 SimFareCalculator）。
+ *
+ * 普通区段按总里程结算（阶梯区间 + 线性延伸 + DEFAULT_FARE），特殊线路
+ * （`SPECIAL_LINE`）单独计价：`ALL 票价` 或自己的区间表。
+ *
+ * @param program 模型。
+ * @param segments 行程区段（按顺序）。
+ * @param outSpecial 输出其中特殊线路的票价部分。
+ * @param outNote 输出一句话说明。
+ * @return 总票价（元）。
+ */
+double computeFare(const Program &program, const std::vector<RouteSegment> &segments,
+                   double &outSpecial, std::string &outNote);
+
+/**
+ * @brief 区间运行时间估算：metro_editor `SimTrainTimeUtils.ComputeSegmentTime` 的移植。
+ *
+ * 短区间（≤ 1.5 km）走物理模型精确积分，长区间走 `S/v_max + ΔT`（ΔT 由 10 km
+ * 参考区间精确积分标定）。数值与 C# 版逐位一致。
+ *
+ * @param distanceKm 区间长度（km）。
+ * @param consist 编组（如 `6B`、`4/8A`）。
+ * @param vMaxKmh 最高速度（km/h）。
+ * @param powerKw 牵引功率（kW）。
+ * @param brakeDecel 制动减速度（m/s²）；<= 0 用 0.85。
+ * @return 运行时间（秒）；距离 <= 0 返回 0。
+ */
+double segmentRunTimeExact(double distanceKm, const std::string &consist,
+                           double vMaxKmh, double powerKw, double brakeDecel);
+
+/**
+ * @brief 某线路在某时刻的发车间隔（秒）。
+ * @param program 模型。
+ * @param lineId 线路 ID。
+ * @param timestamp unix 秒；0 表示当前时间。
+ * @return 间隔（秒）；没有配置返回 120。
+ */
+int headwayAt(const Program &program, const std::string &lineId, std::int64_t timestamp);
+
+/**
+ * @brief 某方向在某时刻的拥挤度系数。
+ * @param program 模型。
+ * @param dirId 方向 ID。
+ * @param timestamp unix 秒；0 表示当前时间。
+ * @return 系数（≥ 1）；没有配置返回 1。
+ */
+double crowdAt(const Program &program, const std::string &dirId, std::int64_t timestamp);
+
+/**
+ * @brief 在换乘站等下一趟车的平均时间：`T/2 + t + (C-1)T`。
+ * @param program 模型。
+ * @param dirId 目标方向。
+ * @param timestamp unix 秒；0 表示当前时间。
+ * @return 秒数。
+ */
+double waitSeconds(const Program &program, const std::string &dirId, std::int64_t timestamp);
+
+/**
+ * @brief 按方向 ID 找它所属的线路 ID。
+ * @param program 模型。
+ * @param dirId 方向 ID。
+ * @return 线路 ID；找不到时原样返回 dirId。
+ */
+std::string lineIdOfDir(const Program &program, const std::string &dirId);
+
+/**
+ * @brief GCJ-02 → WGS-84 坐标转换（国内高德 / 腾讯坐标 → GPS）。
+ *
+ * 用的是国内通用的偏移反算（克拉索夫斯基椭球 + 双精度迭代一次），境外坐标原样返回。
+ *
+ * @param lon 经度（GCJ-02）。
+ * @param lat 纬度（GCJ-02）。
+ * @param outLon 输出经度（WGS-84）。
+ * @param outLat 输出纬度（WGS-84）。
+ */
+void gcj02ToWgs84(double lon, double lat, double &outLon, double &outLat);
+
+/**
+ * @brief WGS-84 → GCJ-02 坐标转换（GPS → 高德 / 腾讯）。
+ * @param lon 经度（WGS-84）。
+ * @param lat 纬度（WGS-84）。
+ * @param outLon 输出经度（GCJ-02）。
+ * @param outLat 输出纬度（GCJ-02）。
+ */
+void wgs84ToGcj02(double lon, double lat, double &outLon, double &outLat);
+
+/** @brief 一个站点的坐标校正建议。 */
+struct CoordFix {
+    std::string name;        ///< 站名。
+    bool hasOld = false;     ///< 原坐标是否可用。
+    double oldLon = 0.0;     ///< 原经度。
+    double oldLat = 0.0;     ///< 原纬度。
+    double newLon = 0.0;     ///< 校正后经度（WGS-84）。
+    double newLat = 0.0;     ///< 校正后纬度（WGS-84）。
+    double shiftMeters = 0.0;///< 位移（米）。
+    bool suspicious = false; ///< 位移过大或缺失坐标，建议人工确认。
+    std::string reason;      ///< 为什么被标记。
+};
+
+/**
+ * @brief 坐标校正：把模型里所有站点的坐标按"来源坐标系"换到 WGS-84。
+ *
+ * 支持的场景：
+ *   - `gcj`：数据是从高德 / 腾讯导出的 GCJ-02 坐标，反算成 WGS-84；
+ *   - `wgs`：数据本来就是 GPS 坐标，只做检查（缺失 / 重复 / 明显越界）；
+ *   - `auto`：先按城区中心判断这批坐标更像哪一套（GCJ-02 偏移量在 200–700 m 量级，
+ *     城市内聚类可以分辨），再决定是否转换。
+ *
+ * 无论哪种模式，都会把"没有坐标 / 两站重合 / 超出城市范围"的站点标成 `suspicious`。
+ *
+ * @param program 模型（不改原数据）。
+ * @param from 坐标系："gcj" / "wgs" / "auto"。
+ * @return 每个有坐标或需要关心的站点一条结果（按站名排序）。
+ */
+std::vector<CoordFix> correctCoordinates(const Program &program, const std::string &from);
 
 /** @brief 经纬度投影结果（Web 墨卡托归一化 0..1）。 */
 struct XY { double x = 0, y = 0; bool valid = false; };

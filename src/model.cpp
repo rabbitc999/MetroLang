@@ -26,6 +26,12 @@ Line *Program::findLine(const std::string &id) {
     return nullptr;
 }
 
+const Line *Program::findLine(const std::string &id) const {
+    for (const Line &l : lines)
+        if (l.id == id) return &l;
+    return nullptr;
+}
+
 Direction *Program::findDirection(const std::string &id) {
     for (Line &l : lines)
         for (Direction &d : l.directions)

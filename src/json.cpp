@@ -141,6 +141,37 @@ Value strArray(const std::vector<std::string> &items) {
     return Value(std::move(a));
 }
 
+/** @brief 星期集合 -> JSON：`null` 表示不限星期，否则是 `["mon","tue"]` 这样的数组。 */
+Value daySetJson(const DaySet &d) {
+    if (d.any || d.days.empty()) return Value(nullptr);
+    return strArray(d.days);
+}
+
+/** @brief JSON -> 星期集合。 */
+void readDaySet(const Value *v, DaySet &out) {
+    out.any = true;
+    out.days.clear();
+    if (v == nullptr) return;
+    const auto *arr = v->asArray();
+    if (arr == nullptr) return;
+    for (const Value &item : *arr) {
+        const auto text = item.asString();
+        if (text) out.days.push_back(std::string(*text));
+    }
+    if (!out.days.empty()) out.any = false;
+}
+
+/** @brief 时段表（`headway_rules` / `crowd_rules`）的公共外壳：写出 `{id, periods:[...]}`。 */
+template <typename Period, typename Emit>
+Object periodTableJson(const std::string &id, const std::vector<Period> &periods, Emit emit) {
+    Object o;
+    o.insert("id", jstr(id));
+    Array list;
+    for (const Period &p : periods) list.push_back(Value(emit(p)));
+    o.insert("periods", Value(std::move(list)));
+    return o;
+}
+
 } // namespace
 
 std::string toJson(const Program &p) {
@@ -296,6 +327,90 @@ std::string toJson(const Program &p) {
         openTimes.push_back(Value(std::move(o)));
     }
     root.insert("open_times", Value(std::move(openTimes)));
+
+    // 运营规则：发车间隔 / 拥挤度 / 停站覆盖 / 区间限速。
+    // 口径对齐 metro_editor SimDataCache 的 headway_rules / crowd_rules，字段名用
+    // snake_case，与顶层其它键保持一致；读端两种写法都认。
+    Array headwayRules;
+    for (const HeadwayProfile &h : p.headways) {
+        headwayRules.push_back(Value(periodTableJson(h.lineId, h.periods, [](const HeadwayPeriod &q) {
+            Object o;
+            o.insert("from", jstr(q.start));
+            o.insert("to", jstr(q.end));
+            o.insert("seconds", Value(q.seconds));
+            o.insert("days", daySetJson(q.days));
+            return o;
+        })));
+    }
+    root.insert("headway_rules", Value(std::move(headwayRules)));
+
+    Array crowdRules;
+    for (const CrowdProfile &c : p.crowds) {
+        crowdRules.push_back(Value(periodTableJson(c.dirId, c.periods, [](const CrowdPeriod &q) {
+            Object o;
+            o.insert("from", jstr(q.start));
+            o.insert("to", jstr(q.end));
+            o.insert("factor", jnum(q.factor));
+            o.insert("days", daySetJson(q.days));
+            return o;
+        })));
+    }
+    root.insert("crowd_rules", Value(std::move(crowdRules)));
+
+    Array dwellRules;
+    for (const DwellRule &d : p.dwellRules) {
+        Object o;
+        const char *scope = d.kind == DwellRule::Node ? "node"
+                            : d.kind == DwellRule::Direction ? "direction" : "line";
+        o.insert("scope", jstr(scope));
+        if (d.kind == DwellRule::Node) o.insert("station", jstr(d.station));
+        else if (d.kind == DwellRule::Direction) o.insert("direction", jstr(d.dirId));
+        else o.insert("line", jstr(d.lineId));
+        o.insert("seconds", jnum(d.seconds));
+        dwellRules.push_back(Value(std::move(o)));
+    }
+    root.insert("dwell_rules", Value(std::move(dwellRules)));
+
+    Array speedLimits;
+    for (const SpeedLimitRule &s : p.speedLimits) {
+        Object o;
+        o.insert("direction", jstr(s.dirId));
+        o.insert("from", jstr(s.from));
+        o.insert("to", jstr(s.to));
+        o.insert("kmh", jnum(s.kmh));
+        speedLimits.push_back(Value(std::move(o)));
+    }
+    root.insert("speed_limits", Value(std::move(speedLimits)));
+
+    // 特殊线路票价（`SPECIAL_LINE`）：`ALL 票价` 与 `SEGMENT A B 票价` 两种写法，
+    // 各自可以带自己的区间表与起步价。
+    Array specials;
+    for (const SpecialLineFare &s : p.specialLines) {
+        Object o;
+        o.insert("line", jstr(s.lineId));
+        o.insert("all", Value(s.all));
+        o.insert("fare", jnum(s.fare));
+        if (!s.from.empty() || !s.to.empty()) {
+            Object seg;
+            seg.insert("from", jstr(s.from));
+            seg.insert("to", jstr(s.to));
+            o.insert("segment", Value(std::move(seg)));
+        }
+        if (s.hasDefaultFare) o.insert("default_fare", jnum(s.defaultFare));
+        if (!s.segments.empty()) {
+            Array segs;
+            for (const PriceSegment &x : s.segments) {
+                Object e;
+                e.insert("rangeStart", jnum(x.lo));
+                e.insert("rangeEnd", jnum(x.hi));
+                e.insert("fare", jnum(x.fare));
+                segs.push_back(Value(std::move(e)));
+            }
+            o.insert("segments", Value(std::move(segs)));
+        }
+        specials.push_back(Value(std::move(o)));
+    }
+    root.insert("special_line_rules", Value(std::move(specials)));
 
     return Value(std::move(root)).dump(2) + "\n";
 }
@@ -469,6 +584,75 @@ bool fromJson(const std::string &json, Program &out, std::vector<std::string> &e
     if (const Value *ot = root.find("open_times"); ot && ot->isArray())
         for (const Value &t : *ot->asArray())
             out.openTimes.push_back(OpenTime{str(t.find("id")), str(t.find("from")), str(t.find("to")), str(t.find("days"))});
+
+    // 运营规则。`from`/`to` 与 `start`/`end` 两种键名都认，方便手工改 JSON。
+    if (const Value *hr = root.find("headway_rules"); hr && hr->isArray())
+        for (const Value &v : *hr->asArray()) {
+            HeadwayProfile h;
+            h.lineId = str(v.find("id"));
+            if (const Value *ps = v.find("periods"); ps && ps->isArray())
+                for (const Value &p : *ps->asArray()) {
+                    HeadwayPeriod q;
+                    q.start = str(p.find("from"), str(p.find("start")));
+                    q.end = str(p.find("to"), str(p.find("end")));
+                    q.seconds = static_cast<int>(num(p.find("seconds")));
+                    readDaySet(p.find("days"), q.days);
+                    h.periods.push_back(q);
+                }
+            out.headways.push_back(h);
+        }
+    if (const Value *cr = root.find("crowd_rules"); cr && cr->isArray())
+        for (const Value &v : *cr->asArray()) {
+            CrowdProfile c;
+            c.dirId = str(v.find("id"));
+            if (const Value *ps = v.find("periods"); ps && ps->isArray())
+                for (const Value &p : *ps->asArray()) {
+                    CrowdPeriod q;
+                    q.start = str(p.find("from"), str(p.find("start")));
+                    q.end = str(p.find("to"), str(p.find("end")));
+                    q.factor = num(p.find("factor"), 1.0);
+                    readDaySet(p.find("days"), q.days);
+                    c.periods.push_back(q);
+                }
+            out.crowds.push_back(c);
+        }
+    if (const Value *dw = root.find("dwell_rules"); dw && dw->isArray())
+        for (const Value &v : *dw->asArray()) {
+            DwellRule d;
+            const std::string scope = str(v.find("scope"), "node");
+            d.kind = scope == "direction" ? DwellRule::Direction
+                     : scope == "line"    ? DwellRule::Line
+                                          : DwellRule::Node;
+            d.station = str(v.find("station"));
+            d.dirId = str(v.find("direction"));
+            d.lineId = str(v.find("line"));
+            d.seconds = num(v.find("seconds"));
+            out.dwellRules.push_back(d);
+        }
+    if (const Value *sl = root.find("speed_limits"); sl && sl->isArray())
+        for (const Value &v : *sl->asArray())
+            out.speedLimits.push_back(SpeedLimitRule{str(v.find("direction")), str(v.find("from")),
+                                                     str(v.find("to")), num(v.find("kmh"))});
+    if (const Value *sp = root.find("special_line_rules"); sp && sp->isArray())
+        for (const Value &v : *sp->asArray()) {
+            SpecialLineFare s;
+            s.lineId = str(v.find("line"));
+            s.all = boolean(v.find("all"));
+            s.fare = num(v.find("fare"));
+            if (const Value *sg = v.find("segment"); sg && sg->isObject()) {
+                s.from = str(sg->find("from"));
+                s.to = str(sg->find("to"));
+            }
+            if (const Value *df = v.find("default_fare"); df && df->isNumber()) {
+                s.hasDefaultFare = true;
+                s.defaultFare = num(df);
+            }
+            if (const Value *segs = v.find("segments"); segs && segs->isArray())
+                for (const Value &x : *segs->asArray())
+                    s.segments.push_back(PriceSegment{num(x.find("rangeStart")), num(x.find("rangeEnd")),
+                                                      num(x.find("fare"))});
+            out.specialLines.push_back(s);
+        }
     return true;
 }
 
