@@ -17,13 +17,15 @@
 
 | 路径 | 内容 |
 |---|---|
-| `index.html` | 页面骨架 + 左上角"数据源 / 解释器位置 / 选择文件"工具栏 |
+| `index.html` | 页面骨架 + 左上角"数据源 / 解释器位置 / 选择文件"工具栏 + 右上角路线面板 |
 | `css/style.css` | 原 `map.html` 的样式（只追加了工具栏的几行样式） |
 | `js/d3.min.js` | 原 `map.html` 内联的 d3 v7.9.0，拆成独立文件 |
 | `js/metro_mapcore.js` | **绘图内核**：纯计算，无 DOM 无 d3。站表索引、模型归一化、投影、Catmull-Rom 平滑、路径 `d`、图例 |
 | `js/app.js` | 交互层：读内核对模型算好的坐标，用 d3 拼 SVG，管 tooltip / 缩放 / 筛选 / 状态栏 |
 | `js/loader.js` | 新增的数据加载层：识别格式 → 归一化 → 交给 `drawMap()` |
 | `test/mapcore.js` | 内核单测，纯 `node` 跑，不需要浏览器 |
+| `test/route_ui.js` | 路线查询的端到端测试（jsdom 跑真实页面），需 `npm i jsdom` |
+| `run-ui-test.sh` | 上面那个的包装：没装 jsdom 就安静跳过，供 `make test` 调用 |
 | `preview.svg` | README / 文档用的效果图（矢量图，贴边裁好） |
 | `tools/render_preview.js` | 无头出图第一步：jsdom 跑页面 → 抠出 `<svg>` |
 | `tools/make_preview.py` | 无头出图第二步：量内容包围盒 → 写成贴边的 `preview.svg` |
@@ -49,15 +51,54 @@ Node 里 `require()` 也能拿到。全部是纯函数，输入输出都是普�
 | `collectStationInfo(model)` | 每站的线路颜色、快车、在建、无障碍，给 tooltip 用 |
 | `buildLegend(model)` | 图例项（已按线路名排序，带对比文字色） |
 | `generateSmoothPoints(points, closed, segments)` | Catmull-Rom 插值，4 点以上才动手，每段默认采 10 个点 |
+| `findRoute(model, from, to, options)` | 站到站的乘车方案：按线路分段、带颜色、带近似里程 |
+| `haversineKm(a, b)` | 两站球面距离（km） |
 
 跑一遍单测：
 
 ```sh
-node map_view/test/mapcore.js      # 21 项，全绿才算没改坏
+node map_view/test/mapcore.js      # 47 项，全绿才算没改坏
 ```
 
 改动内核之后请**同时**看一眼两条消费路径：`metro-lang html`（静态页）和
 本查看器（交互页）。两者走的是同一份代码，但序列化出来的模型字段不完全一致。
+
+其中 8 项是**与 CLI 的对照**：拿 `build/check/full.json`（广州全量）算四组典型 OD，
+要求线路序列与 `metro-lang route` 完全一致、里程偏差 < 5%。C++ 侧口径修正后
+前端测试会跟着用新结果，不会因为写死的期望值而过期。
+
+## 路线查询
+
+右上角有一个路线面板，三种用法：
+
+1. **点两站**：先点起点、再点终点，自动出结果；
+2. **手填**：两个输入框有站名补全（`<datalist>`），填完点"查询"；
+3. **控制台**：`__findRoute('广州南站', '机场南(T1)')`。
+
+出结果后地图上按**线路自己的颜色**逐段画实线，白色描边垫底保证压线时也看得清；
+换乘站画空心圈，起终点画实心大圈。右侧面板给引导文案、站数/换乘次数/段数，
+以及每段的线路名与里程。
+
+```js
+__findRoute('广州南站', '机场南(T1)');
+// { found: true, stops: 27, transfers: 1, distanceKm: 47.25,
+//   segments: [ { line:'G2', line_name:'2号线', color:'#00689E', distanceKm:30.36, … },
+//               { line:'G3', line_name:'3号线', color:'#EF9D4B', distanceKm:16.57, … } ],
+//   guidance: '在【广州南站】上车，乘坐2号线，在【嘉禾望岗】换乘3号线，坐 27 站到达【机场南(T1)】。' }
+__clearRoute();
+```
+
+前端没有区间运行时间和发车间隔，所以 `findRoute` 用**区间距离**当权重（换乘按固定
+6 km 折算），只承诺"线路选得对、里程接近"，**不报秒数与票价**。精确规划用
+`metro-lang route` 或 LSP 里的 `metro/route`，口径见
+[`doc/05-route.md`](../doc/05-route.md)。
+
+端到端测试（jsdom 跑真实页面，模拟填表 → 点查询 → 检查 SVG）：
+
+```sh
+cd map_view && npm i jsdom
+node test/route_ui.js              # 18 项
+```
 
 ## 用法
 

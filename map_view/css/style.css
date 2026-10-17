@@ -370,3 +370,112 @@
     border-color: #4CAF50;
     color: #2e7d32;
 }
+
+/* ---------- 路线查询面板 ---------- */
+#route-panel {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 320px;
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 10px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
+    z-index: 11;
+    font-size: 13px;
+    color: #222;
+    backdrop-filter: blur(4px);
+    display: none;
+}
+#route-panel.open { display: block; }
+#route-panel .route-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px 6px;
+}
+#route-panel .route-title { font-size: 14px; font-weight: 600; }
+#route-panel #route-close {
+    border: none;
+    background: transparent;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    color: #888;
+    padding: 0 4px;
+}
+#route-panel #route-close:hover { color: #000; }
+#route-panel .route-inputs { padding: 0 12px; }
+#route-panel .route-inputs label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+    color: #555;
+}
+#route-panel .route-inputs input {
+    flex: 1;
+    min-width: 0;
+    padding: 4px 8px;
+    font-size: 13px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    outline: none;
+}
+#route-panel .route-inputs input:focus { border-color: #4CAF50; }
+#route-panel .route-actions {
+    display: flex;
+    gap: 8px;
+    padding: 4px 12px 10px;
+}
+#route-panel .route-actions button {
+    padding: 4px 12px;
+    font-size: 13px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    background: white;
+    cursor: pointer;
+}
+#route-panel .route-actions button:hover {
+    border-color: #4CAF50;
+    color: #2e7d32;
+}
+#route-panel #route-go {
+    background: #4CAF50;
+    border-color: #4CAF50;
+    color: #fff;
+}
+#route-panel #route-go:hover { background: #43a047; color: #fff; }
+#route-result { padding: 0 12px 12px; }
+#route-result .route-guidance {
+    line-height: 1.6;
+    margin-bottom: 6px;
+    color: #333;
+}
+#route-result .route-error { color: #c62828; }
+#route-result .route-stat {
+    display: flex;
+    gap: 12px;
+    color: #666;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+}
+#route-result .route-seg {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 0;
+    border-top: 1px dashed #e0e0e0;
+}
+#route-result .route-seg .swatch {
+    width: 14px;
+    height: 4px;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+#route-result .route-hint {
+    color: #888;
+    font-size: 12px;
+    line-height: 1.6;
+}

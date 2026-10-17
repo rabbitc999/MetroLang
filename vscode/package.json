@@ -81,12 +81,32 @@
       {
         "command": "metro.restartServer",
         "title": "Metro: 重启语言服务器"
+      },
+      {
+        "command": "metro.previewData",
+        "title": "Metro: 数据预览（统计摘要）",
+        "icon": "$(table)"
+      },
+      {
+        "command": "metro.queryRoute",
+        "title": "Metro: 查询路线（起终点 → 耗时票价）",
+        "icon": "$(git-compare)"
       }
     ],
     "menus": {
       "editor/title": [
         {
           "command": "metro.previewMap",
+          "when": "resourceLangId == metro-lang",
+          "group": "navigation"
+        },
+        {
+          "command": "metro.previewData",
+          "when": "resourceLangId == metro-lang",
+          "group": "navigation"
+        },
+        {
+          "command": "metro.queryRoute",
           "when": "resourceLangId == metro-lang",
           "group": "navigation"
         }

@@ -32,12 +32,27 @@ build/metro-lang/metro-lang compile   文件.m -o out.json
 build/metro-lang/metro-lang decompile out.json -o out.metro
 build/metro-lang/metro-lang html      文件.m -o out.html
 build/metro-lang/metro-lang route     文件.m --from 站A --to 站B
+build/metro-lang/metro-lang coords    文件.m [--from-coord=gcj|wgs|auto]
 build/metro-lang/metro-lang lsp                     # 语言服务器（stdio JSON-RPC）
 ```
 
+`route` 的常用开关：
+
+| 开关 | 作用 |
+|---|---|
+| `--json` | 输出结构化结果（`summary` / `segments` / `stations` / `guidance`），给插件和查看器消费 |
+| `--time HH:mm` | 按指定时刻查（决定发车间隔与拥挤度），缺省用当前时间 |
+| `--fewer-transfers` | 优先少换乘，而不是一味最短时间 |
+| `--no-special` | 忽略特殊线路票价 |
+| `--matrix A B C` | 批量算 A/B/C 两两之间的耗时矩阵 |
+
+`coords` 是**高德坐标校正**体检：`--from-coord=gcj` 把数据当成 GCJ-02（火星坐标）反算成
+WGS-84，`wgs` 表示数据本来就是 WGS-84 不做转换，`auto`（缺省）按是否落在国内判断。
+输出每站的位移量，用来排查"导入的坐标是不是火星坐标"。
+
 `check` 加 `--diagnostics=json` 会改成输出一行 JSON（`{ok, errors:[{line,column,severity,code,message}]}`），
 给编辑器解析用；`lsp` 就是把这个前端挂到 LSP 协议上的子命令，**不额外产第二个可执行文件**
-（编译器本体即语言服务器，`doc/04-lsp.md`）。
+（编译器本体即语言服务器，见 `doc/04-lsp.md`）。路线规划的完整口径见 `doc/05-route.md`。
 
 更多 make 目标：`make gen` 只重新生成分析器与模板头；`make svg` 导出
 `doc/shenzhen-metro.svg`；`make preview` 导出 `map_view/preview.svg`；
@@ -46,11 +61,15 @@ build/metro-lang/metro-lang lsp                     # 语言服务器（stdio JS
 前端改完跑一遍测试：
 
 ```sh
-make check                         # 样例冒烟
-node map_view/test/mapcore.js      # 绘图内核 21 项
-node vscode/test/lsp.js            # LSP 端到端 7 项
-node vscode/test/smoke.js          # 插件打包冒烟 9 项
+make test                          # 下面五组全跑
+sh check.sh                        # 样例冒烟 + 大样例往返零差异（9 项）
+node map_view/test/mapcore.js      # 绘图内核与寻路，含与 CLI 的路线对照（47 项）
+python tests/test_numeric.py       # 时间/票价/坐标口径（22 项）
+python tests/test_lsp.py           # LSP hover/definition/outline/completion + 自定义请求（34 项）
+node map_view/test/route_ui.js     # 查看器路线查询 UI 端到端（18 项，需 jsdom）
 ```
+
+最后一项要 `cd map_view && npm i jsdom`（纯 JS，可选）；没装时 `make test` 会跳过它而不是失败。
 
 ## 目录
 
@@ -64,7 +83,12 @@ node vscode/test/smoke.js          # 插件打包冒烟 9 项
 | `src/json.cpp` | 模型 ↔ JSON（对齐 `doc/02-json-format.md`） |
 | `src/decompile.cpp` | **模板化**反编译：模型 → `tmpl::Value` → `template/templates/*.tmpl` |
 | `src/html.cpp` | 自包含 SVG HTML 地图 |
-| `src/route.cpp` | 站点/线路图上的 Dijkstra，权重取 `segmentRunTimeSeconds` |
+| `src/route.cpp` | 站点/线路图上的 A*，权重 = 运行时间 + 停站 + 换乘步行 + 候车（`doc/05-route.md`） |
+| `src/train_time.cpp` | 区间运行时间的物理模型（Davis 阻力 + 恒功率牵引 + 数值积分） |
+| `src/fare.cpp` | 票价：阶梯 → 线性延伸 → 封顶，含特殊线路与区段票价 |
+| `src/geo.cpp` | GCJ-02 ↔ WGS-84 坐标校正 |
+| `src/lsp_index.cpp` | 标识符索引：hover / 跳转定义 / 大纲 / 补全的数据来源 |
+| `src/lsp.cpp` | 语言服务器：诊断 + 语义请求 + `metro/route`、`metro/previewMap` 等自定义请求 |
 | `gen.sh` / `Makefile` / `check.sh` / `ci.sh` | 生成、构建、样例冒烟与发布门禁 |
 | `template/templates/*.tmpl` | 反编译模板；构建期由 `tools/embed_templates.py` 内嵌成 C++ 源 |
 | `preprocess/` `template/` `json/` | 从 ParseEngine 的 `library/` 拷贝的依赖副本（各自独立） |

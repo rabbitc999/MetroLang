@@ -486,6 +486,10 @@
                     if (d.isFutureOnly) return;
                     if (!shouldRespondToEvent(d)) return;
                     showStationInfo(d.name, d.dirKeys);
+                    // 路线面板开着时，点击地图就是"选站"。
+                    if (d3.select("#route-panel").classed("open")) {
+                        routePickStation(d.name);
+                    }
                 });
 
             // ---- 触摸长按（仅显示信息，无拖拽） ----
@@ -876,6 +880,189 @@
                 setAllMode();
             }
 
+            // ---- 动态路线查询：点两站算路线，按线路着色绘制，右侧面板出摘要 ----
+            /** 当前查询结果（`core.findRoute` 的返回值），供重绘/导出用。 */
+            let currentRoute = null;
+            /** 正在等用户点第二站时，暂存第一站。 */
+            let pendingFrom = null;
+            /** 面板是否处于「点地图选站」状态：'from' | 'to' | null。 */
+            let picking = null;
+
+            function stationColorOf(name) {
+                const found = stationData.find(d => d.name === name);
+                return found && found.colors && found.colors.length ? found.colors[0] : '#888';
+            }
+
+            /**
+             * 把一条查询结果画到地图上：每段用该线路自己的颜色画实线，
+             * 换乘站画空心圈，起终点画实心大圈。
+             */
+            function drawRoute(route) {
+                currentRoute = route;
+                routeStationNames = route.stations.slice();
+                currentMode = 'route';
+                currentHighlightGroupKey = 'all';
+                tempLineGroup.selectAll("*").remove();
+                updateLegendAndSelect('all');
+
+                const pointsOf = names => names
+                    .map(name => {
+                        const found = stationData.find(d => d.name === name);
+                        return found ? { x: found.x, y: found.y, name: found.name } : null;
+                    })
+                    .filter(p => p !== null);
+
+                // 每段单独画：线路 A 红、线路 B 蓝，一眼能看出在哪换乘。
+                route.segments.forEach(seg => {
+                    const pts = pointsOf(seg.path);
+                    if (pts.length < 2) return;
+                    const smooth = generateSmoothPoints(pts, false, 10);
+                    const d = "M" + smooth.map(p => p.join(",")).join("L");
+                    // 白色描边垫底，深色线也能压在别的线上面看清。
+                    tempLineGroup.append("path")
+                        .attr("d", d)
+                        .attr("class", "temp-line")
+                        .style("stroke", "#fff")
+                        .style("stroke-width", 7)
+                        .style("fill", "none")
+                        .style("opacity", 0.85)
+                        .style("pointer-events", "none");
+                    tempLineGroup.append("path")
+                        .attr("d", d)
+                        .attr("class", "temp-line")
+                        .style("stroke", seg.color || stationColorOf(seg.from))
+                        .style("stroke-width", 4)
+                        .style("fill", "none")
+                        .style("stroke-linecap", "round")
+                        .style("stroke-linejoin", "round")
+                        .style("pointer-events", "none");
+                });
+
+                // 换乘站：空心圈；起点/终点：实心大圈。
+                const transferStations = new Set(route.segments.slice(1).map(s => s.from));
+                route.stations.forEach(name => {
+                    const found = stationData.find(d => d.name === name);
+                    if (!found) return;
+                    const isEnd = name === route.from || name === route.to;
+                    const isTransfer = transferStations.has(name);
+                    if (!isEnd && !isTransfer) return;
+                    tempLineGroup.append("circle")
+                        .attr("cx", found.x)
+                        .attr("cy", found.y)
+                        .attr("r", isEnd ? 6 : 4.5)
+                        .attr("class", "temp-marker")
+                        .style("fill", isEnd ? "#d32f2f" : "#fff")
+                        .style("stroke", isEnd ? "#fff" : "#d32f2f")
+                        .style("stroke-width", 1.8)
+                        .style("pointer-events", "none");
+                });
+
+                updateStyles(currentZoomK);
+                zoomToPoints(route.stations.map(name => {
+                    const found = stationData.find(d => d.name === name);
+                    return found ? { x: found.x, y: found.y } : null;
+                }).filter(p => p !== null));
+            }
+
+            /** 渲染右侧面板里的结果块。 */
+            function renderRoutePanel(route) {
+                const box = d3.select("#route-result");
+                box.html("");
+                if (!route) {
+                    box.append("div").attr("class", "route-hint")
+                        .text("点地图上两个站，或在上面的输入框里填起终点。");
+                    return;
+                }
+                if (!route.found) {
+                    box.append("div").attr("class", "route-error").text(route.error || "没有找到路线");
+                    return;
+                }
+                box.append("div").attr("class", "route-guidance").text(route.guidance);
+                const stat = box.append("div").attr("class", "route-stat");
+                stat.append("span").text(`共 ${route.stops} 站`);
+                stat.append("span").text(`换乘 ${route.transfers} 次`);
+                stat.append("span").text(`${route.segments.length} 段`);
+                route.segments.forEach(seg => {
+                    const row = box.append("div").attr("class", "route-seg");
+                    row.append("div").attr("class", "swatch").style("background", seg.color || "#888");
+                    row.append("span").text(
+                        `${seg.line_name}　${seg.from} → ${seg.to}（${seg.path.length - 1} 站）`);
+                });
+                box.append("div").attr("class", "route-hint")
+                    .text("站数为近似值；精确到秒的耗时与票价请用 metro-lang route 或编辑器里的查询。");
+            }
+
+            /** 执行一次查询。 */
+            function runRouteQuery(from, to) {
+                if (!from || !to) {
+                    renderRoutePanel({ found: false, error: '请先选好起点和终点' });
+                    return null;
+                }
+                const route = coreApi.findRoute(model, from, to);
+                renderRoutePanel(route);
+                if (route.found) drawRoute(route);
+                return route;
+            }
+
+            /** 清掉查询结果与高亮。 */
+            function clearRoute() {
+                currentRoute = null;
+                pendingFrom = null;
+                picking = null;
+                routeStationNames = [];
+                tempLineGroup.selectAll("*").remove();
+                d3.select("#route-from").property("value", "");
+                d3.select("#route-to").property("value", "");
+                renderRoutePanel(null);
+                setAllMode();
+            }
+
+            /** 站点被点中：按面板当前状态决定填起点还是终点。 */
+            function routePickStation(name) {
+                if (picking === 'from' || (!picking && pendingFrom === null)) {
+                    pendingFrom = name;
+                    picking = 'to';
+                    d3.select("#route-from").property("value", name);
+                    d3.select("#route-to").property("value", "");
+                    renderRoutePanel(null);
+                    return;
+                }
+                d3.select("#route-to").property("value", name);
+                picking = null;
+                const from = d3.select("#route-from").property("value");
+                pendingFrom = null;
+                runRouteQuery(from, name);
+            }
+
+            /** 绑定面板上的按钮。 */
+            function bindRoutePanel() {
+                d3.select("#route-panel").classed("open", true);
+                // 站点名补全
+                const list = d3.select("#route-stations");
+                list.html("");
+                stationData.forEach(d => list.append("option").attr("value", d.name));
+
+                d3.select("#route-go").on("click", () => {
+                    const from = d3.select("#route-from").property("value").trim();
+                    const to = d3.select("#route-to").property("value").trim();
+                    runRouteQuery(from, to);
+                });
+                d3.select("#route-swap").on("click", () => {
+                    const from = d3.select("#route-from").property("value");
+                    const to = d3.select("#route-to").property("value");
+                    d3.select("#route-from").property("value", to);
+                    d3.select("#route-to").property("value", from);
+                });
+                d3.select("#route-clear").on("click", clearRoute);
+                d3.select("#route-close").on("click", () => {
+                    clearRoute();
+                    d3.select("#route-panel").classed("open", false);
+                });
+                d3.select("#route-from").on("focus", () => { picking = 'from'; });
+                d3.select("#route-to").on("focus", () => { picking = 'to'; });
+                renderRoutePanel(null);
+            }
+
             // ---- 图例 ----
             const legendDiv = d3.select("#legend");
             legendDiv.html("");
@@ -931,6 +1118,10 @@
             window.__drawTempLine = drawTempLine;
             window.__clearTempMode = clearTempMode;
             window.__setAllMode = setAllMode;
+            window.__findRoute = runRouteQuery;
+            window.__drawRoute = drawRoute;
+            window.__clearRoute = clearRoute;
+            window.__model = model;
             window.__setRouteMode = setRouteMode;
             window.__tempLineGroup = tempLineGroup;
             window.__svg = svg;
@@ -940,6 +1131,7 @@
             // ---- 初始化 ----
             setAllMode();
             legendDiv.style("display", "block");
+            bindRoutePanel();
         }
         // ============================================================
         //  4. 信息面板

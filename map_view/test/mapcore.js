@@ -86,6 +86,111 @@ check(routes[0].d.startsWith('M'), 'path d 以 M 开头');
 check(routes[0].smoothPoints.length > routes[0].points.length, '平滑点比原始折线密');
 check(core.toPathData([[1, 2], [3, 4]], true).endsWith('Z'), '环线 path 闭合');
 
+// ---- 寻路：两条线路在「换乘站」交汇 ----
+const net = {
+  key_city: '测试市',
+  stations: {
+    起点: { lon: 114.00, lat: 22.50 },
+    中一: { lon: 114.01, lat: 22.50 },
+    换乘站: { lon: 114.02, lat: 22.50 },
+    中二: { lon: 114.02, lat: 22.51 },
+    终点: { lon: 114.02, lat: 22.52 },
+    旁支: { lon: 114.05, lat: 22.50 },
+  },
+  lines: {
+    A: {
+      name: '1号线', color: '#ff0000',
+      direction: [
+        { station: [{ name: '起点' }, { name: '中一' }, { name: '换乘站' }, { name: '旁支' }] },
+        { station: [{ name: '旁支' }, { name: '换乘站' }, { name: '中一' }, { name: '起点' }] },
+      ],
+    },
+    B: {
+      name: '2号线', color: '#0000ff',
+      direction: [
+        { station: [{ name: '换乘站' }, { name: '中二' }, { name: '终点' }] },
+        { station: [{ name: '终点' }, { name: '中二' }, { name: '换乘站' }] },
+      ],
+    },
+  },
+};
+const netModel = core.buildModel(net);
+
+const r1 = core.findRoute(netModel, '起点', '换乘站');
+check(r1.found === true, '寻路：直达能找到');
+check(r1.transfers === 0, '寻路：直达换乘 0 次');
+check(r1.segments.length === 1, '寻路：直达只有 1 段');
+check(r1.segments[0].color === '#ff0000', '寻路：段带线路颜色');
+check(r1.stops === 2, '寻路：直达 2 站');
+
+const r2 = core.findRoute(netModel, '起点', '终点');
+check(r2.found === true, '寻路：跨线能找到');
+check(r2.transfers === 1, '寻路：跨线换乘 1 次');
+check(r2.segments.length === 2, '寻路：跨线分 2 段');
+check(r2.segments[0].line === 'A' && r2.segments[1].line === 'B', '寻路：分段线路顺序正确');
+check(r2.segments[0].to === '换乘站' && r2.segments[1].from === '换乘站', '寻路：换乘发生在交汇站');
+check(r2.segments[1].color === '#0000ff', '寻路：第二段用 2 号线颜色');
+check(r2.stations[r2.stations.length - 1] === '终点', '寻路：站序以终点收尾');
+check(r2.guidance.indexOf('换乘') >= 0, '寻路：引导文本提到换乘');
+
+const r3 = core.findRoute(netModel, '起点', '不存在');
+check(r3.found === false && /找不到终点站/.test(r3.error), '寻路：未知终点给出原因');
+
+const r4 = core.findRoute(netModel, '起点', '起点');
+check(r4.found === false, '寻路：起终点相同返回失败');
+
+const r5 = core.findRoute(netModel, '起点', '终点', { avoidLines: ['B'] });
+check(r5.found === false, '寻路：避开必经线路后不连通');
+
+// ---- 与 C++ 口径对照：同一份广州数据，前端的线路选择要和 CLI 一致 ----
+// 期望值直接从 CLI 现算，避免 C++ 侧口径修正后前端测试跟着过期。
+const gzJson = require('path').resolve(__dirname, '../../build/check/full.json');
+const gzSrc = require('path').resolve(__dirname, '../../samples/guangzhou.m');
+if (require('fs').existsSync(gzJson) && require('fs').existsSync(gzSrc)) {
+  const gzData = JSON.parse(require('fs').readFileSync(gzJson, 'utf8'));
+  const gz = core.buildModel(gzData);
+  const binCandidates = [
+    require('path').resolve(__dirname, '../../build/metro-lang/metro-lang.exe'),
+    require('path').resolve(__dirname, '../../build/metro-lang/metro-lang'),
+  ];
+  const bin = binCandidates.find(p => require('fs').existsSync(p));
+
+  /** 跑一次 CLI，取 `合计：xx km，换乘 n 次` 与分段线路名。 */
+  function cliPlan(a, b) {
+    const out = require('child_process').execFileSync(
+      bin, ['route', gzSrc, '--from', a, '--to', b], { encoding: 'utf8' });
+    const km = /合计：([\d.]+) km/.exec(out);
+    const lines = [];
+    out.split(/\r?\n/).forEach(line => {
+      const m = /^\s+\d+\.\s+(\S+?)（开往/.exec(line);
+      if (m) lines.push(m[1]);
+    });
+    return { km: km ? parseFloat(km[1]) : NaN, lines };
+  }
+
+  const CASES = [
+    ['广州南站', '机场南(T1)'],
+    ['体育西路', '广州南站'],
+    ['广州塔', '白云公园'],
+    ['公园前', '广州东站'],
+  ];
+  for (const [a, b] of CASES) {
+    const got = core.findRoute(gz, a, b);
+    const gotLines = got.found ? got.segments.map(s => s.line_name) : [];
+    const want = bin ? cliPlan(a, b) : { km: NaN, lines: null };
+    if (want.lines) {
+      check(JSON.stringify(gotLines) === JSON.stringify(want.lines),
+            `广州 ${a} → ${b}：线路选择与 CLI 一致（得到 ${JSON.stringify(gotLines)}，CLI ${JSON.stringify(want.lines)}）`);
+      const dev = got.found && isFinite(want.km) ? Math.abs(got.distanceKm - want.km) / want.km : 1;
+      check(dev < 0.05,
+            `广州 ${a} → ${b}：里程误差 < 5%（得到 ${got.distanceKm} km，CLI ${want.km} km，偏差 ${(dev * 100).toFixed(1)}%）`);
+    }
+  }
+  if (!bin) console.log('[skip] 广州数据对照（找不到 metro-lang，先 make）');
+} else {
+  console.log('[skip] 广州数据对照（先跑 sh check.sh 生成 build/check/full.json）');
+}
+
 console.log();
 if (failed === 0) {
   console.log('mapcore 单元测试全部通过');

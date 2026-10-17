@@ -235,6 +235,224 @@ function escapeHtml(text) {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+/** LSP Position → VS Code Position。 @param {any} position LSP 位置。 @returns {vscode.Position} 编辑器位置。 */
+function toPosition(position) {
+  return new vscode.Position(position.line, position.character);
+}
+
+/**
+ * 确认文档已同步给服务器；没同步过就补一次 didOpen。
+ *
+ * @param {vscode.TextDocument} document 文档。
+ * @returns {boolean} 服务器可用时返回 true。
+ */
+function ensureSynced(document) {
+  if (!client || !client.running) return false;
+  const uri = document.uri.toString();
+  if (!opened.has(uri)) syncOpen(document);
+  return true;
+}
+
+/**
+ * 悬停：服务器把光标下的标识符解析成模型实体（线路 / 车站 / 方向 / 运营参数），
+ * 返回签名 + 属性说明 + 定义位置。
+ *
+ * @param {vscode.TextDocument} document 文档。
+ * @param {vscode.Position} position 光标位置。
+ * @returns {Promise<vscode.Hover|null>} 悬停内容。
+ */
+async function provideHover(document, position) {
+  if (!ensureSynced(document)) return null;
+  let result;
+  try {
+    result = await client.request('textDocument/hover', {
+      textDocument: { uri: document.uri.toString() },
+      position: { line: position.line, character: position.character },
+    });
+  } catch {
+    return null;
+  }
+  if (!result || !result.contents) return null;
+
+  const value = typeof result.contents === 'string' ? result.contents : result.contents.value;
+  if (!value) return null;
+  const markdown = new vscode.MarkdownString(value);
+  markdown.isTrusted = false;
+
+  const range = result.range
+    ? new vscode.Range(toPosition(result.range.start), toPosition(result.range.end))
+    : undefined;
+  return new vscode.Hover(markdown, range);
+}
+
+/**
+ * 跳转到定义：服务器给出本文档里同名定义所在的行列。
+ *
+ * @param {vscode.TextDocument} document 文档。
+ * @param {vscode.Position} position 光标位置。
+ * @returns {Promise<vscode.Location[]|null>} 定义位置列表。
+ */
+async function provideDefinition(document, position) {
+  if (!ensureSynced(document)) return null;
+  let result;
+  try {
+    result = await client.request('textDocument/definition', {
+      textDocument: { uri: document.uri.toString() },
+      position: { line: position.line, character: position.character },
+    });
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(result) || result.length === 0) return null;
+  return result.map((item) => new vscode.Location(
+    vscode.Uri.parse(item.uri),
+    new vscode.Range(toPosition(item.range.start), toPosition(item.range.end)),
+  ));
+}
+
+/**
+ * 大纲：服务器把「线路 / 车站 / 方向 / 运营参数」的定义列成符号表。
+ *
+ * @param {vscode.TextDocument} document 文档。
+ * @returns {Promise<vscode.SymbolInformation[]>} 符号列表。
+ */
+async function provideSymbols(document) {
+  if (!ensureSynced(document)) return null;
+  let result;
+  try {
+    result = await client.request('textDocument/documentSymbol', {
+      textDocument: { uri: document.uri.toString() },
+    });
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(result) || result.length === 0) return null;
+  return result.map((item) => {
+    const selection = new vscode.Range(toPosition(item.selectionRange.start), toPosition(item.selectionRange.end));
+    const range = item.range
+      ? new vscode.Range(toPosition(item.range.start), toPosition(item.range.end))
+      : selection;
+    return new vscode.SymbolInformation(
+      item.name,
+      symbolKind(item.kind),
+      item.detail || '',
+      new vscode.Location(document.uri, range),
+    );
+  });
+}
+
+/**
+ * LSP 的 SymbolKind 数值 → VS Code 的 SymbolKind。
+ *
+ * @param {number} kind LSP 符号种类。
+ * @returns {vscode.SymbolKind} 编辑器符号种类。
+ */
+function symbolKind(kind) {
+  const table = {
+    5: vscode.SymbolKind.Class,
+    12: vscode.SymbolKind.Function,
+    13: vscode.SymbolKind.Variable,
+    14: vscode.SymbolKind.Constant,
+    23: vscode.SymbolKind.Struct,
+  };
+  return table[kind] || vscode.SymbolKind.Variable;
+}
+
+/**
+ * 路线查询：让用户输入起终点，服务器算出行程后在输出面板里列出来。
+ *
+ * 与 `metro-lang route` 完全一致（同一个 `planRoute`）；用命令而不是内嵌表单，
+ * 是为了不引人额外的 UI 依赖——需要图形化的人走「数据预览」。
+ */
+async function queryRoute() {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor || editor.document.languageId !== LANGUAGE_ID) {
+    void vscode.window.showWarningMessage('MetroLang：先把一个 .metro 文档设为活动编辑器。');
+    return;
+  }
+  const document = editor.document;
+  if (!client || !client.running) await startServer();
+  if (!client || !client.running) return;
+  syncOpen(document);
+
+  const from = await vscode.window.showInputBox({ prompt: '起点站', placeHolder: '例如：体育西路' });
+  if (!from) return;
+  const to = await vscode.window.showInputBox({ prompt: '终点站', placeHolder: '例如：广州塔' });
+  if (!to) return;
+  const clock = await vscode.window.showInputBox({
+    prompt: '出发时刻（HH:mm，留空用当前时间）',
+    placeHolder: '08:00',
+  });
+
+  let result;
+  try {
+    result = await client.request('metro/route', {
+      textDocument: { uri: document.uri.toString() },
+      from,
+      to,
+      time: clock || '',
+    });
+  } catch (error) {
+    void vscode.window.showErrorMessage(`MetroLang：路线查询失败（${error.message}）`);
+    return;
+  }
+  if (!result) return;
+  if (!result.ok) {
+    void vscode.window.showErrorMessage(`MetroLang：${result.error || '查询失败'}`);
+    return;
+  }
+
+  outputChannel.appendLine('');
+  outputChannel.appendLine(result.guidance || `${from} → ${to}`);
+  for (const line of result.lines || []) outputChannel.appendLine(line);
+  outputChannel.show(true);
+}
+
+/**
+ * 数据预览：把当前文档的统计摘要（线路 / 车站 / 换乘 / 运营规则 / 未建模行）
+ * 放进一个 Webview，方便改数据时对账。
+ */
+async function previewData() {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor || editor.document.languageId !== LANGUAGE_ID) {
+    void vscode.window.showWarningMessage('MetroLang：先把一个 .metro 文档设为活动编辑器。');
+    return;
+  }
+  const document = editor.document;
+  if (!client || !client.running) await startServer();
+  if (!client || !client.running) return;
+  syncOpen(document);
+
+  let result;
+  try {
+    result = await client.request('metro/dataSummary', {
+      textDocument: { uri: document.uri.toString() },
+    });
+  } catch (error) {
+    void vscode.window.showErrorMessage(`MetroLang：数据预览失败（${error.message}）`);
+    return;
+  }
+  if (!result || !result.ok) {
+    void vscode.window.showWarningMessage(
+      `MetroLang：${(result && result.error) || '数据预览失败'}`);
+    return;
+  }
+
+  const rows = (result.rows || [])
+    .map((row) => `<tr><th>${escapeHtml(row[0])}</th><td>${escapeHtml(String(row[1]))}</td></tr>`)
+    .join('');
+  showPreviewHtml(`<!doctype html><meta charset="utf-8"><title>MetroLang 数据预览</title>
+    <body style="font-family: system-ui, sans-serif; background:#faf7fa; color:#2b2b2b; padding:24px;">
+    <h2 style="margin:0 0 4px;">数据预览</h2>
+    <div style="color:#777;font-size:12px;margin-bottom:16px;">${escapeHtml(document.fileName)}</div>
+    <table style="border-collapse:collapse;min-width:380px;">${rows}</table>
+    <style>
+      th{text-align:left;font-weight:600;padding:6px 20px 6px 0;color:#555;}
+      td{padding:6px 0;font-variant-numeric:tabular-nums;}
+      tr{border-bottom:1px solid #eee;}
+    </style></body>`);
+}
+
 /**
  * 插件激活：注册折叠 provider、诊断与命令。
  *
@@ -275,10 +493,20 @@ function activate(context) {
   );
   void startServer();
 
-  // 3. 命令。
+  // 3. 语义提示：悬停看标识符的类型与定义，F12 跳定义，大纲看结构。
+  //    三者都转发给语言服务器（服务器侧是 lsp_index.cpp 的语义索引）。
+  context.subscriptions.push(
+    vscode.languages.registerHoverProvider(SELECTOR, { provideHover: provideHover }),
+    vscode.languages.registerDefinitionProvider(SELECTOR, { provideDefinition: provideDefinition }),
+    vscode.languages.registerDocumentSymbolProvider(SELECTOR, { provideDocumentSymbols: provideSymbols }),
+  );
+
+  // 4. 命令。
   context.subscriptions.push(
     vscode.commands.registerCommand('metro.openDoc', () => openLanguageReference()),
     vscode.commands.registerCommand('metro.previewMap', () => previewMap()),
+    vscode.commands.registerCommand('metro.previewData', () => previewData()),
+    vscode.commands.registerCommand('metro.queryRoute', () => queryRoute()),
     vscode.commands.registerCommand('metro.restartServer', async () => {
       await stopServer();
       await startServer();

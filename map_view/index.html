@@ -50,6 +50,25 @@
         <span id="status">未加载数据</span>
     </div>
 
+    <!-- 路线查询：点两站算一条路线，或手填起终点 -->
+    <div id="route-panel">
+        <div class="route-head">
+            <span class="route-title">路线查询</span>
+            <button type="button" id="route-close" title="关闭">×</button>
+        </div>
+        <div class="route-inputs">
+            <label>起点<input type="text" id="route-from" list="route-stations" placeholder="点地图选站" /></label>
+            <label>终点<input type="text" id="route-to" list="route-stations" placeholder="点地图选站" /></label>
+            <datalist id="route-stations"></datalist>
+        </div>
+        <div class="route-actions">
+            <button type="button" id="route-go">查询</button>
+            <button type="button" id="route-swap" title="交换起终点">⇅</button>
+            <button type="button" id="route-clear">清除</button>
+        </div>
+        <div id="route-result"></div>
+    </div>
+
     <script src="js/d3.min.js"></script>
     <!-- 绘图内核（几何 / 配色 / 模型构建）先加载；app.js 只剩 D3 交互层 -->
     <script src="js/metro_mapcore.js"></script>

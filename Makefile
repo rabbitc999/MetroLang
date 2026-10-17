@@ -12,6 +12,7 @@
 #   make        默认生成分析器 + 固化模板 + 编译出 build/metro-lang
 #   make gen    只重新生成分析器与模板头
 #   make check  样例冒烟：编译 → JSON → 反编译 → HTML → 路线
+#   make test   全部测试：样例冒烟 + 地图内核 + 数值口径 + LSP 语义
 #   make svg    把深圳样例导出成 doc/shenzhen-metro.svg（README 用图）
 #   make preview 把 map_view 查看器的渲染结果导成 map_view/preview.svg
 #   make clean  清掉本工程的构建产物
@@ -59,7 +60,11 @@ OBJS := \
 	$(BUILD)/obj/src/json.o \
 	$(BUILD)/obj/src/decompile.o \
 	$(BUILD)/obj/src/html.o \
+	$(BUILD)/obj/src/train_time.o \
+	$(BUILD)/obj/src/fare.o \
+	$(BUILD)/obj/src/geo.o \
 	$(BUILD)/obj/src/route.o \
+	$(BUILD)/obj/src/lsp_index.o \
 	$(BUILD)/obj/src/lsp.o \
 	$(BUILD)/obj/src/main.o \
 	$(BUILD)/obj/preprocess/preprocess.o \
@@ -77,7 +82,7 @@ MAPCORE_SRC := $(CURDIR)/map_view/js/metro_mapcore.js $(CURDIR)/template/static/
 DEPS := $(OBJS:.o=.d)
 -include $(DEPS)
 
-.PHONY: all gen check clean svg preview
+.PHONY: all gen check test clean svg preview
 
 # 生成产物随源码一起清掉，避免残留旧分析器 / 旧模板头。
 all: $(BIN)
@@ -155,6 +160,19 @@ endif
 
 check: $(BIN)
 	$(SH) $(CURDIR)/check.sh
+
+# 全部测试。四组互相独立，任何一组失败都让 make 以非零退出：
+#   check.sh      冒烟（编译 / 回环 / HTML / 路线）
+#   mapcore.js    地图内核（浏览器与 C++ 共用的纯函数）
+#   numeric.py    运行时间 / 票价 / 坐标 / 运营参数的口径
+#   lsp.py        hover / definition / documentSymbol / completion
+test: $(BIN)
+	$(SH) $(CURDIR)/check.sh
+	node $(CURDIR)/map_view/test/mapcore.js
+	$(PYTHON) $(CURDIR)/tests/test_numeric.py
+	$(PYTHON) $(CURDIR)/tests/test_lsp.py
+	@# 查看器 UI 测试要 jsdom（可选依赖）：没装就跳过，不让 make test 变红。
+	$(SH) $(CURDIR)/map_view/run-ui-test.sh
 
 clean:
 	@rm -rf $(BUILD)

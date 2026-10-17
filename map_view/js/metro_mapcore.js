@@ -16,6 +16,7 @@
  *   planRoute(model, layout)  → 每条线路的折线点、平滑点、路段类型分段
  *   collectStationInfo(...)   → 站点配色、快车/交路/暂缓标签
  *   buildLegend(model)        → 图例条目（按线路名排序）
+ *   findRoute(model, a, b)    → 站到站的乘车方案（按线路分段、带颜色）
  *
  * 坐标：`stations[].lon/lat` 是 WGS-84 经纬度；布局用**等比**缩放
  * （1 度经度与 1 度纬度等长），与 `src/html.cpp` 的投影口径一致。
@@ -525,6 +526,268 @@ function () {
         });
     }
 
+    // ============================================================
+    //  7. 站点间寻路（查看器的「动态查询路线」）
+    // ============================================================
+
+    /**
+     * @brief 两站间的球面距离（km）。没有坐标时返回 `null`。
+     * @param {object} a 站点（含 lon/lat）。
+     * @param {object} b 站点。
+     * @return {number|null} 距离（km）。
+     */
+    function haversineKm(a, b) {
+        if (!a || !b) return null;
+        if (isNaN(a.lon) || isNaN(a.lat) || isNaN(b.lon) || isNaN(b.lat)) return null;
+        var R = 6371.0088;
+        var rad = Math.PI / 180;
+        var dLat = (b.lat - a.lat) * rad;
+        var dLon = (b.lon - a.lon) * rad;
+        var h = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(a.lat * rad) * Math.cos(b.lat * rad) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+    }
+
+    /**
+     * @brief 在方向表上做 Dijkstra，返回按线路分段的乘车方案。
+     *
+     * 口径向 `src/route.cpp` 看齐，但用的是查看器能拿到的数据：
+     *   - 节点是「方向键 + 站名」，同一物理站跨方向要靠换乘边跳；
+     *   - 运行边代价 = 相邻站**球面距离**（缺坐标时退回 1 km/站）；
+     *   - 换乘边代价 = `transferKm`（默认 6 km，约等于"换乘一次 ≈ 多坐三四站"，
+     *     与 C++ 端按秒计算时的实际取舍量级相当）。
+     *
+     * 前端只能给出**近似**结果：没有区间运行时间和发车间隔，无法算秒和票价。
+     * 精确规划请用 CLI `metro-lang route` 或 LSP `metro/route`。
+     *
+     * @param {object} model `buildModel()` 的结果。
+     * @param {string} from 起点站名。
+     * @param {string} to 终点站名。
+     * @param {object} [options] `{transferKm=6, avoidLines=[], preferLines=[]}`。
+     * @return {object} `{found, from, to, stops, transfers, distanceKm, segments, stations, lines, error}`。
+     */
+    function findRoute(model, from, to, options) {
+        var opt = options || {};
+        var transferKm = typeof opt.transferKm === 'number' ? opt.transferKm : 6;
+        var avoid = opt.avoidLines || [];
+        var prefer = opt.preferLines || [];
+
+        function empty(error) {
+            return {
+                found: false, from: from, to: to, error: error, stops: 0, transfers: 0,
+                distanceKm: 0, segments: [], stations: [], lines: []
+            };
+        }
+
+        var startDirs = model.stationToDirKeys[from] || [];
+        var endDirs = model.stationToDirKeys[to] || [];
+        if (startDirs.length === 0) return empty('找不到起点站：' + from);
+        if (endDirs.length === 0) return empty('找不到终点站：' + to);
+        if (from === to) return empty('起点与终点相同');
+
+        var dirByKey = {};
+        model.rawDirections.forEach(function (dir) { dirByKey[dir.key] = dir; });
+
+        // 每条方向里"站名 → 序号"（同站名在一方向上重复出现时取第一个）。
+        var posInDir = {};
+        model.rawDirections.forEach(function (dir) {
+            var map = {};
+            dir.stationNames.forEach(function (name, i) {
+                if (map[name] === undefined) map[name] = i;
+            });
+            posInDir[dir.key] = map;
+        });
+
+        function nodeKey(dirKey, station) { return dirKey + '\u0001' + station; }
+
+        /**
+         * @brief 相邻两站的代价（km）：优先用数据里的实测区间距离。
+         *
+         * 数据里 `station[i].next` 只表示「本站 → 下一站」，反向走同一段时查不到。
+         * 这里两个方向都试：先看 a 的 `next` 是否指向 b，再看 b 的 `next` 是否指向 a
+         * （反向时那一站就是 a 的"下一站"）。都对不上才退回球面距离。
+         */
+        function edgeKm(dirKey, a, b) {
+            var dir = dirByKey[dirKey];
+            var raw = dir && dir.dirObj && dir.dirObj.station;
+            if (raw && raw.length) {
+                var ia = posInDir[dirKey][a];
+                var ib = posInDir[dirKey][b];
+                var n = dir.stationNames.length;
+                function nextOf(i) {
+                    var v = raw[i] && raw[i].next;
+                    return (typeof v === 'number' && isFinite(v) && v > 0) ? v : null;
+                }
+                // a → 下一站 正好是 b
+                if (ia !== undefined && ib === (ia + 1) % n) {
+                    var f = nextOf(ia);
+                    if (f !== null) return f;
+                }
+                // 反向：b → 下一站 正好是 a
+                if (ib !== undefined && ia === (ib + 1) % n) {
+                    var r = nextOf(ib);
+                    if (r !== null) return r;
+                }
+            }
+            var d = haversineKm(model.stations[a], model.stations[b]);
+            return d === null ? 1 : Math.max(d, 0.05);
+        }
+
+        /** 分段内一段的距离：优先查区间距离，否则退回球面。 */
+        function legKm(dirKey, a, b) {
+            return edgeKm(dirKey, a, b);
+        }
+
+        var best = {};
+        var prev = {};
+        var queue = [];
+
+        function relax(key, cost, fromKey, info) {
+            if (best[key] === undefined || cost < best[key] - 1e-9) {
+                best[key] = cost;
+                prev[key] = { key: fromKey, info: info };
+                queue.push({ key: key, cost: cost });
+            }
+        }
+
+        startDirs.forEach(function (dirKey) {
+            if (avoid.indexOf(dirByKey[dirKey].lineId) >= 0) return;
+            relax(nodeKey(dirKey, from), 0, null, null);
+        });
+
+        // 小规模网络（几百个方向）用"每次取最小"的朴素实现就够，省一个堆。
+        while (queue.length > 0) {
+            var bi = 0;
+            for (var qi = 1; qi < queue.length; qi++) if (queue[qi].cost < queue[bi].cost) bi = qi;
+            var cur = queue.splice(bi, 1)[0];
+            if (cur.cost > best[cur.key] + 1e-9) continue;
+
+            var sep = cur.key.indexOf('\u0001');
+            var dirKey = cur.key.slice(0, sep);
+            var station = cur.key.slice(sep + 1);
+            var dir = dirByKey[dirKey];
+            var at = posInDir[dirKey][station];
+            var n = dir.stationNames.length;
+
+            // 运行边：前一站 / 后一站（环线首尾互通）。
+            var neighbours = [];
+            if (at > 0) neighbours.push(at - 1);
+            if (at < n - 1) neighbours.push(at + 1);
+            if (dir.isLoop && n > 1) {
+                if (at === 0) neighbours.push(n - 1);
+                if (at === n - 1) neighbours.push(0);
+            }
+            neighbours.forEach(function (j) {
+                var next = dir.stationNames[j];
+                if (!next) return;
+                relax(nodeKey(dirKey, next), cur.cost + edgeKm(dirKey, station, next), cur.key,
+                      { kind: 'ride', dirKey: dirKey, station: next });
+            });
+
+            // 换乘边：同一物理站换到其它方向。
+            var otherDirs = model.stationToDirKeys[station] || [];
+            otherDirs.forEach(function (otherKey) {
+                if (otherKey === dirKey) return;
+                var otherLine = dirByKey[otherKey].lineId;
+                if (avoid.indexOf(otherLine) >= 0) return;
+                var added = transferKm;
+                if (prefer.indexOf(otherLine) >= 0) added *= 0.5;
+                relax(nodeKey(otherKey, station), cur.cost + added, cur.key,
+                      { kind: 'transfer', dirKey: otherKey, station: station });
+            });
+        }
+
+        // 在终点的所有方向里挑代价最小的。
+        var bestEnd = null;
+        endDirs.forEach(function (dirKey) {
+            var key = nodeKey(dirKey, to);
+            if (best[key] !== undefined && (bestEnd === null || best[key] < best[bestEnd])) bestEnd = key;
+        });
+        if (bestEnd === null) return empty('没有连通路线：' + from + ' → ' + to);
+
+        // 回溯成方向链。
+        var chain = [];
+        var walk = bestEnd;
+        while (walk !== null && walk !== undefined) {
+            var sep2 = walk.indexOf('\u0001');
+            chain.unshift({ dirKey: walk.slice(0, sep2), station: walk.slice(sep2 + 1) });
+            var p = prev[walk];
+            walk = p ? p.key : null;
+        }
+
+        // 方向链 → 分段（同一条**线路**连续行走的合并成一段）。
+        // 注意按线路 ID 而不是方向键分组：同一线路的正反两个方向在同一个站相接，
+        // 只是图的走法，对乘客来说并不算换乘。
+        var segments = [];
+        var stations = [from];
+        var current = null;
+        for (var i = 1; i < chain.length; i++) {
+            var step = chain[i];
+            var stepDir = dirByKey[step.dirKey];
+            if (current === null || current.line !== stepDir.lineId) {
+                if (current !== null) current.to = chain[i - 1].station;
+                current = {
+                    line: stepDir.lineId,
+                    line_name: stepDir.displayName,
+                    color: stepDir.color,
+                    direction: stepDir.key,
+                    from: chain[i - 1].station,
+                    to: chain[i].station,
+                    path: [chain[i - 1].station, step.station]
+                };
+                segments.push(current);
+            } else {
+                current.to = step.station;
+                current.path.push(step.station);
+            }
+            if (stations[stations.length - 1] !== step.station) stations.push(step.station);
+        }
+
+        // 各段里程与站数（换乘站在两段里各出现一次，里程不重复计）。
+        segments.forEach(function (s) {
+            s.stations = s.path.length;
+            var km = 0;
+            for (var j = 1; j < s.path.length; j++) {
+                km += legKm(s.direction, s.path[j - 1], s.path[j]);
+            }
+            s.distanceKm = Math.round(km * 100) / 100;
+        });
+
+        var totalKm = 0;
+        segments.forEach(function (s) { totalKm += s.distanceKm; });
+        totalKm = Math.round(totalKm * 100) / 100;
+
+        var lines = [];
+        segments.forEach(function (s) {
+            lines.push(s.line_name + '（' + s.from + ' → ' + s.to + '）  ' +
+                       s.path.length + ' 站 / ' + s.distanceKm.toFixed(2) + ' km');
+        });
+
+        var guidance = '';
+        if (segments.length > 0) {
+            guidance = '在【' + from + '】上车，乘坐' + segments[0].line_name;
+            for (var k = 1; k < segments.length; k++) {
+                guidance += '，在【' + segments[k].from + '】换乘' + segments[k].line_name;
+            }
+            guidance += '，坐 ' + (stations.length - 1) + ' 站到达【' + to + '】。';
+        }
+
+        return {
+            found: true,
+            from: from,
+            to: to,
+            error: '',
+            stations: stations,
+            segments: segments,
+            lines: lines,
+            stops: stations.length - 1,
+            transfers: Math.max(0, segments.length - 1),
+            distanceKm: totalKm,
+            guidance: guidance
+        };
+    }
+
     var API = {
         VERSION: VERSION,
         extractPrefix: extractPrefix,
@@ -538,7 +801,9 @@ function () {
         planRoute: planRoute,
         toPathData: toPathData,
         collectStationInfo: collectStationInfo,
-        buildLegend: buildLegend
+        buildLegend: buildLegend,
+        haversineKm: haversineKm,
+        findRoute: findRoute
     };
 
     return API;
