@@ -4,6 +4,10 @@
 但去掉了"必须由编辑器喂数据"的绑定，改成**自己选数据源**——可以直接载入
 `metro-lang` 解析器写出的 JSON，也可以载入地铁编辑器导出的旧格式 JSON。
 
+几何计算（索引站表、投影、平滑、连线）全在 `js/metro_mapcore.js` 里，那一份文件
+**同时被本查看器、`metro-lang html` 生成的静态页、`metro/previewMap` 的 webview
+复用**——纯函数、不碰 DOM，浏览器和 C++ 都吃同一套坐标。
+
 ![查看器效果图](preview.svg)
 
 上图就是本页显示的效果：深圳地铁全量线网（16 条线路 / 354 座车站）在
@@ -16,15 +20,44 @@
 | `index.html` | 页面骨架 + 左上角"数据源 / 解释器位置 / 选择文件"工具栏 |
 | `css/style.css` | 原 `map.html` 的样式（只追加了工具栏的几行样式） |
 | `js/d3.min.js` | 原 `map.html` 内联的 d3 v7.9.0，拆成独立文件 |
-| `js/app.js` | 原 `map.html` 的绘图脚本，**绘图逻辑一行未改** |
+| `js/metro_mapcore.js` | **绘图内核**：纯计算，无 DOM 无 d3。站表索引、模型归一化、投影、Catmull-Rom 平滑、路径 `d`、图例 |
+| `js/app.js` | 交互层：读内核对模型算好的坐标，用 d3 拼 SVG，管 tooltip / 缩放 / 筛选 / 状态栏 |
 | `js/loader.js` | 新增的数据加载层：识别格式 → 归一化 → 交给 `drawMap()` |
+| `test/mapcore.js` | 内核单测，纯 `node` 跑，不需要浏览器 |
 | `preview.svg` | README / 文档用的效果图（矢量图，贴边裁好） |
 | `tools/render_preview.js` | 无头出图第一步：jsdom 跑页面 → 抠出 `<svg>` |
 | `tools/make_preview.py` | 无头出图第二步：量内容包围盒 → 写成贴边的 `preview.svg` |
 
 拆成多个文件只是为了让每份都可读：原来 416 KB 的单文件里 348 KB 是 d3，
 剩下的绘图代码和样式也各自独立了。`index.html` 用普通 `<script>` 按
-`d3 → app → loader` 的顺序加载，`file://` 直接双击也能跑。
+`d3 → metro_mapcore → app → loader` 的顺序加载（**内核必须在 `app.js` 前面**，
+`app.js` 只在 `drawMap()` 里取 `window.MetroMapCore`，所以顺序错了会在第一次
+渲染时直接抛错而不是静默画错），`file://` 直接双击也能跑。
+
+## 内核 API
+
+`js/metro_mapcore.js` 是 UMD 包装：浏览器里挂 `window.MetroMapCore`，
+Node 里 `require()` 也能拿到。全部是纯函数，输入输出都是普通对象：
+
+| 函数 | 作用 |
+|---|---|
+| `indexStations(stations)` | 数组或字典两种站表都吃，统一成"站名 → 站点"的字典，保留站点原有字段 |
+| `buildModel(data)` | 归一化整个 JSON：`stations` / `lines` / `zones` / `platformCoordLookup` / 方向表 / 换乘与快车索引 / `visible()` |
+| `computeLayout(model, canvas, margin)` | 等比投影（1 度经度按 1 度纬度算长度），返回 `width` / `height` / `scale` / `project(lon, lat)` |
+| `planRoute(model, layout, options)` | 每个方向一条：站点序列 → 投影点 → 平滑点 → SVG 路径 `d`（环线自动闭合） |
+| `toPathData(points, closed)` | 点数组转 `M…L…`，`closed` 时补 `Z` |
+| `collectStationInfo(model)` | 每站的线路颜色、快车、在建、无障碍，给 tooltip 用 |
+| `buildLegend(model)` | 图例项（已按线路名排序，带对比文字色） |
+| `generateSmoothPoints(points, closed, segments)` | Catmull-Rom 插值，4 点以上才动手，每段默认采 10 个点 |
+
+跑一遍单测：
+
+```sh
+node map_view/test/mapcore.js      # 21 项，全绿才算没改坏
+```
+
+改动内核之后请**同时**看一眼两条消费路径：`metro-lang html`（静态页）和
+本查看器（交互页）。两者走的是同一份代码，但序列化出来的模型字段不完全一致。
 
 ## 用法
 
@@ -116,8 +149,9 @@ python3 tools/make_preview.py /tmp/shenzhen.json      # -> preview.svg
 
 `tools/make_preview.py` 串了三步：
 
-1. `node tools/render_preview.js` 用 jsdom 把 `index.html` / `app.js` / `loader.js`
-   原样跑一遍（d3 画图是纯 DOM 操作，不需要排版引擎），抠出生成的那段 `<svg>`；
+1. `node tools/render_preview.js` 用 jsdom 把 `index.html` / `metro_mapcore.js` /
+   `app.js` / `loader.js` 原样跑一遍（d3 画图是纯 DOM 操作，不需要排版引擎），
+   抠出生成的那段 `<svg>`；
    顺带把 `css/style.css` 里跟 SVG 有关的规则内联进去——少了 `.line-path{fill:none}`，
    线路会按 SVG 默认值填成黑色；
 2. cairosvg 栅格化（2 倍超采样），再用 `convert -format %@` 量出非背景像素的包围盒，

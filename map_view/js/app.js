@@ -1,169 +1,16 @@
         const activeStationSet = new Set();
 
-        // ============================================================
-        //  1. 工具函数（排序 & 亮度）
-        // ============================================================
-        function extractPrefix(name) {
-            const match = name.match(/^\D*/);
-            return match ? match[0] : '';
-        }
-
-        function extractLineNumber(name) {
-            const match = name.match(/\d+/);
-            return match ? parseInt(match[0], 10) : -1;
-        }
-
-        function compareLineName(nameA, nameB) {
-            const prefixA = extractPrefix(nameA);
-            const prefixB = extractPrefix(nameB);
-            const emptyA = prefixA === '';
-            const emptyB = prefixB === '';
-            if (emptyA !== emptyB) {
-                return emptyA ? -1 : 1;
-            }
-            if (prefixA !== prefixB) {
-                return prefixA.localeCompare(prefixB);
-            }
-            const numA = extractLineNumber(nameA);
-            const numB = extractLineNumber(nameB);
-            if (numA !== numB) {
-                return numA - numB;
-            }
-            return nameA.localeCompare(nameB);
-        }
-
-        function getContrastTextColor(hexColor) {
-            let r, g, b;
-            if (hexColor.startsWith('#')) {
-                let c = hexColor.substring(1);
-                if (c.length === 3) {
-                    c = c[0] + c[0] + c[1] + c[1] + c[2] + c[2];
-                }
-                r = parseInt(c.substring(0, 2), 16);
-                g = parseInt(c.substring(2, 4), 16);
-                b = parseInt(c.substring(4, 6), 16);
-            } else {
-                return '#000';
-            }
-            const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-            return luminance > 160 ? '#000' : '#fff';
-        }
+        /** 绘图内核（map_view/js/metro_mapcore.js）：排序、亮度、平滑曲线、模型构建都在那里。 */
+        const coreApi = window.MetroMapCore || {};
 
         // ============================================================
-        //  区域类型中文标签 + 区域 tooltip（独立，避免站点 tooltip 拥挤）
+        //  1. 工具函数（委托 metro_mapcore.js，实现只有一份）
         // ============================================================
-        function zoneTypeLabel(type) {
-            const map = {
-                COMMERCIAL: '商业区', RESIDENTIAL: '住宅区', CBD: '中央商务区', GOVERNMENT: '政务区',
-                TOURIST: '旅游区', TRANSPORT_HUB: '交通枢纽', EDUCATIONAL: '教育区', MEDICAL: '医疗区',
-                MIXED: '综合区', OTHER: '其他'
-            };
-            return map[type] || type || '';
-        }
-
-        function zoneAttrHtml(attrs) {
-            if (!attrs) return '';
-            const rows = [];
-            if (attrs.PeakHours && Array.isArray(attrs.PeakHours) && attrs.PeakHours.length) {
-                rows.push('高峰时段：' + attrs.PeakHours.join('、'));
-            }
-            if (attrs.PopulationDensity != null) rows.push('人口密度：' + attrs.PopulationDensity);
-            if (attrs.AvgRent != null) rows.push('平均租金：' + attrs.AvgRent);
-            if (rows.length === 0) return '';
-            return '<div class="zone-attributes">' + rows.map(r => '<div>' + r + '</div>').join('') + '</div>';
-        }
-
-        function showZoneTooltip(zone, event) {
-            const zt = d3.select("#zone-tooltip");
-            const title = zone.Name || zone.Id || '区域';
-            const meta = [];
-            if (zone.Type) meta.push('类型：' + zoneTypeLabel(zone.Type));
-            if (zone.City) meta.push('城市：' + zone.City);
-            let html = '<div class="zone-title">' + title + '</div>';
-            if (meta.length) html += '<div class="zone-meta">' + meta.join('　') + '</div>';
-            html += zoneAttrHtml(zone.Attributes);
-            if (zone.Stations && Array.isArray(zone.Stations) && zone.Stations.length) {
-                html += '<div class="zone-stations">含 ' + zone.Stations.length + ' 站</div>';
-            }
-            zt.html(html).style("opacity", 1);
-            positionZoneTooltip(event);
-        }
-
-        function positionZoneTooltip(event) {
-            d3.select("#zone-tooltip")
-                .style("left", (event.pageX + 14) + "px")
-                .style("top", (event.pageY - 10) + "px");
-        }
-
-        function hideZoneTooltip() {
-            d3.select("#zone-tooltip").style("opacity", 0);
-        }
-
-        // ============================================================
-        //  2. 平滑曲线
-        // ============================================================
-        function generateSmoothPoints(points, closed, segmentsPerSegment) {
-            if (!points || points.length < 2) return points.slice();
-            const pts = points.map(p => (Array.isArray(p) ? { x: p[0], y: p[1] } : p));
-            if (pts.length === 2) {
-                return pts.map(p => [p.x, p.y]);
-            }
-            let workPts = pts.slice();
-            if (closed) {
-                const first = workPts[0];
-                const last = workPts[workPts.length - 1];
-                if (first.x !== last.x || first.y !== last.y) {
-                    workPts.push(first);
-                }
-            }
-            if (workPts.length < 4) {
-                return workPts.map(p => [p.x, p.y]);
-            }
-            let expanded = [];
-            if (closed) {
-                const n = workPts.length;
-                expanded.push(workPts[n - 1]);
-                expanded.push(...workPts);
-                expanded.push(workPts[0]);
-            } else {
-                const first = workPts[0];
-                const second = workPts[1];
-                const last = workPts[workPts.length - 1];
-                const prevLast = workPts[workPts.length - 2];
-                expanded.push({
-                    x: first.x - (second.x - first.x),
-                    y: first.y - (second.y - first.y)
-                });
-                expanded.push(...workPts);
-                expanded.push({
-                    x: last.x + (last.x - prevLast.x),
-                    y: last.y + (last.y - prevLast.y)
-                });
-            }
-            const result = [];
-            const seg = segmentsPerSegment || 10;
-            for (let i = 0; i < expanded.length - 3; i++) {
-                const p0 = expanded[i];
-                const p1 = expanded[i + 1];
-                const p2 = expanded[i + 2];
-                const p3 = expanded[i + 3];
-                for (let j = 0; j < seg; j++) {
-                    const t = j / seg;
-                    const t2 = t * t;
-                    const t3 = t2 * t;
-                    const x = 0.5 * ((2 * p1.x) +
-                        (-p0.x + p2.x) * t +
-                        (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 +
-                        (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3);
-                    const y = 0.5 * ((2 * p1.y) +
-                        (-p0.y + p2.y) * t +
-                        (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 +
-                        (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3);
-                    result.push([x, y]);
-                }
-            }
-            return result;
-        }
+        const extractPrefix = coreApi.extractPrefix;
+        const extractLineNumber = coreApi.extractLineNumber;
+        const compareLineName = coreApi.compareLineName;
+        const getContrastTextColor = coreApi.getContrastTextColor;
+        const generateSmoothPoints = coreApi.generateSmoothPoints;
 
         // ============================================================
         //  3. 主绘图（含优先级交互）
@@ -176,133 +23,28 @@
             d3.select("#container").selectAll("*").remove();
             d3.select("#loading").style("display", "none");
 
-            const stations = data.stations;
+            // ---- 模型构建统一走 metro_mapcore.js（与 `metro-lang html` 内嵌的是同一份） ----
+            const core = window.MetroMapCore;
+            if (!core) throw new Error('metro_mapcore.js 没有加载：index.html 的 <script> 顺序丢了？');
+            const model = core.buildModel({
+                key_city: data.key_city,
+                stations: data.stations,
+                lines: data.lines,
+                zones: data.zones
+            });
+
+            const stations = model.stations;
             const lines = data.lines;
-            const keyCity = data.key_city;
-
-            const rawDirections = [];
-            const stationToDirKeys = {};
-
-            // ---- 构建平台坐标查找表 ----
-            const platformCoordLookup = {};
-            for (const [stationName, stationInfo] of Object.entries(stations)) {
-                if (stationInfo.lines) {
-                    for (const lineInfo of stationInfo.lines) {
-                        if (lineInfo.platform_coord) {
-                            if (!platformCoordLookup[stationName]) platformCoordLookup[stationName] = {};
-                            platformCoordLookup[stationName][lineInfo.id] = {
-                                lon: lineInfo.platform_coord.lon,
-                                lat: lineInfo.platform_coord.lat
-                            };
-                        }
-                    }
-                }
-            }
-
-            for (const [lineId, lineInfo] of Object.entries(lines)) {
-                lineInfo.direction.forEach((dir, idx) => {
-                    const dirKey = lineId + '|' + idx;
-                    const city = dir.city || lineInfo.city || keyCity;
-                    const baseName = lineInfo.name || lineId;
-                    const groupKey = (city !== keyCity) ? city + baseName : baseName;
-                    const displayName = groupKey;
-                    const color = lineInfo.color || '#888';
-                    const isLoop = dir.is_loop || false;
-                    const stationNames = dir.station.map(s => s.name);
-                    const isFuture = dir.is_future === true;
-
-                    rawDirections.push({
-                        key: dirKey,
-                        groupKey: groupKey,
-                        displayName: displayName,
-                        color: color,
-                        stationNames: stationNames,
-                        isLoop: isLoop,
-                        lineId: lineId,
-                        isFuture: isFuture,
-                        dirIndex: idx,
-                        dirObj: dir,
-                        segmentTypes: dir.segment_types || [],
-                        expressStops: dir.express_stops || [],
-                        routings: dir.routings || []
-                    });
-
-                    stationNames.forEach(name => {
-                        if (!stationToDirKeys[name]) stationToDirKeys[name] = new Set();
-                        stationToDirKeys[name].add(dirKey);
-                    });
-                });
-            }
-
-            const dirKeyToGroupKey = new Map();
-            for (const dir of rawDirections) {
-                dirKeyToGroupKey.set(dir.key, dir.groupKey);
-            }
-
-            // ---- 收集快车停靠站及其线路颜色 ----
-            const expressColorByStation = {};
-            const expressLinesByStation = {};
-            rawDirections.forEach(dir => {
-                if (!dir.expressStops || dir.expressStops.length === 0) return;
-                dir.expressStops.forEach(name => {
-                    if (!expressColorByStation[name]) expressColorByStation[name] = [];
-                    if (!expressColorByStation[name].includes(dir.color)) expressColorByStation[name].push(dir.color);
-                    if (!expressLinesByStation[name]) expressLinesByStation[name] = [];
-                    if (!expressLinesByStation[name].some(e => e.color === dir.color)) {
-                        expressLinesByStation[name].push({ name: dir.displayName, color: dir.color });
-                    }
-                });
-            });
-
-            // ---- 收集交路信息：站点 → 交路名称列表（含线路显示名） ----
-            const routingByStation = {};
-            rawDirections.forEach(dir => {
-                if (!dir.routings || dir.routings.length === 0) return;
-                dir.routings.forEach(routing => {
-                    if (!routing || !routing.name || !Array.isArray(routing.stations)) return;
-                    routing.stations.forEach(name => {
-                        if (!routingByStation[name]) routingByStation[name] = [];
-                        const label = dir.displayName + '·' + routing.name;
-                        if (!routingByStation[name].includes(label)) {
-                            routingByStation[name].push({ text: label, color: dir.color });
-                        }
-                    });
-                });
-            });
-
-            const groupMap = new Map();
-            for (const dir of rawDirections) {
-                const key = dir.groupKey;
-                if (!groupMap.has(key)) {
-                    groupMap.set(key, {
-                        keys: [],
-                        color: dir.color,
-                        stationNamesSet: new Set(),
-                        isLoop: dir.isLoop
-                    });
-                }
-                const group = groupMap.get(key);
-                group.keys.push(dir.key);
-                dir.stationNames.forEach(s => group.stationNamesSet.add(s));
-                if (dir.isLoop) group.isLoop = true;
-            }
-
-            const mergedLines = [];
-            for (const [groupKey, group] of groupMap) {
-                const sampleDir = rawDirections.find(d => d.groupKey === groupKey);
-                const lineId = sampleDir ? sampleDir.lineId : null;
-                const baseColor = (lineId && lines[lineId] && lines[lineId].color) ? lines[lineId].color : group.color;
-
-                mergedLines.push({
-                    displayName: groupKey,
-                    keys: group.keys,
-                    color: baseColor,
-                    stationNames: Array.from(group.stationNamesSet),
-                    isLoop: group.isLoop,
-                    hasFuture: group.hasFuture
-                });
-            }
-            mergedLines.sort((a, b) => compareLineName(a.displayName, b.displayName));
+            const keyCity = model.keyCity;
+            const rawDirections = model.rawDirections;
+            const stationToDirKeys = model.stationToDirKeys;
+            const platformCoordLookup = model.platformCoordLookup;
+            const mergedLines = model.mergedLines;
+            const expressColorByStation = model.expressColorByStation;
+            const expressLinesByStation = model.expressLinesByStation;
+            const routingByStation = model.routingByStation;
+            // app.js 老代码按 Map 用方向→组的映射，这里包一层。
+            const dirKeyToGroupKey = new Map(Object.entries(model.dirKeyToGroupKey));
 
             const coords = Object.values(stations).map(s => [s.lon, s.lat]);
             const allLons = coords.map(c => c[0]);

@@ -32,11 +32,25 @@ build/metro-lang/metro-lang compile   文件.m -o out.json
 build/metro-lang/metro-lang decompile out.json -o out.metro
 build/metro-lang/metro-lang html      文件.m -o out.html
 build/metro-lang/metro-lang route     文件.m --from 站A --to 站B
+build/metro-lang/metro-lang lsp                     # 语言服务器（stdio JSON-RPC）
 ```
+
+`check` 加 `--diagnostics=json` 会改成输出一行 JSON（`{ok, errors:[{line,column,severity,code,message}]}`），
+给编辑器解析用；`lsp` 就是把这个前端挂到 LSP 协议上的子命令，**不额外产第二个可执行文件**
+（编译器本体即语言服务器，`doc/04-lsp.md`）。
 
 更多 make 目标：`make gen` 只重新生成分析器与模板头；`make svg` 导出
 `doc/shenzhen-metro.svg`；`make preview` 导出 `map_view/preview.svg`；
 `make clean` 清掉 `build/`。发布门禁是 `sh ci.sh`。
+
+前端改完跑一遍测试：
+
+```sh
+make check                         # 样例冒烟
+node map_view/test/mapcore.js      # 绘图内核 21 项
+node vscode/test/lsp.js            # LSP 端到端 7 项
+node vscode/test/smoke.js          # 插件打包冒烟 9 项
+```
 
 ## 目录
 

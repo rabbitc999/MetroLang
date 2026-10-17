@@ -1,13 +1,23 @@
 /**
  * @file html.cpp
- * @brief 生成自包含的 HTML 地图（Web 墨卡托 + 内联 SVG）。
+ * @brief 生成自包含的 HTML 地图：模型 JSON + 内嵌的绘图内核（`map_view/js/metro_mapcore.js`）。
+ *
+ * 分工：
+ *   - **几何与配色**（合并方向、平滑曲线、等比投影、图例排序）全在
+ *     `metro_mapcore.js` 里，浏览器与 C++ 共用同一份文件，不会两边打架；
+ *   - C++ 只负责把模型序列化成 JSON（复用 `toJson`）、转义、拼页面骨架。
+ *
+ * 页面本身不依赖 D3：`metro_mapcore.buildModel/computeLayout/planRoute`
+ * 给出纯数据，`renderStatic()` 把它拼成内联 SVG —— 单文件、离线可看。
  */
 #include "metro_model.hpp"
 
-#include <cmath>
+// 由 tools/embed_mapcore.py 在构建期生成：k_metroMapCore（绘图内核）与
+// k_staticRenderer（静态渲染层）。与 metro_templates.hpp 同一个套路——
+// 运行时不读磁盘，保证 `metro-lang html` 产出单文件。
+#include "metro_mapcore.hpp"
+
 #include <cstdio>
-#include <map>
-#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -15,7 +25,35 @@
 namespace metro {
 namespace {
 
-/** @brief HTML/XML 文本转义。 */
+/** @brief 站点是否带无障碍设施（地图上打标用）。 */
+bool accessibleStation(const Station &s) {
+    const StationAccess &a = s.access;
+    return a.present &&
+           (a.accessible || a.hasAccessibleToilet || !a.elevators.empty() ||
+            a.hasWideGate || a.hasTactilePaving || a.hasToilet);
+}
+
+/** @brief 数值 -> 文本（两位小数，够画图用）。 */
+std::string num(double v) {
+    char b[64];
+    std::snprintf(b, sizeof(b), "%.2f", v);
+    return b;
+}
+
+/** @brief 把 JSON 放进 `<script type="application/json">` 时要做的最小转义。 */
+std::string escJsonForHtml(const std::string &json) {
+    std::string o;
+    o.reserve(json.size() + 16);
+    for (char c : json) {
+        if (c == '<') o += "\\u003c";
+        else if (c == '>') o += "\\u003e";
+        else if (c == '&') o += "\\u0026";
+        else o += c;
+    }
+    return o;
+}
+
+/** @brief HTML 文本转义。 */
 std::string esc(const std::string &s) {
     std::string o;
     for (char c : s) {
@@ -31,122 +69,54 @@ std::string esc(const std::string &s) {
 }
 
 /**
- * @brief 站点是否带无障碍设施（用于地图上打标）。
- * @param s 站点。
- * @return 有电梯 / 无障碍卫生间 / 宽闸机 / 盲道，或显式标了 ACCESSIBLE 时返回 true。
+ * @brief 把无障碍站名清单塞进模型 JSON 的旁边。
+ *
+ * 无障碍是 `metro-lang` 自己的语义（地铁编辑器那边没有对应字段），
+ * 直接作为独立数组给渲染层，避免污染 JSON v2 的字段口径。
  */
-bool accessibleStation(const Station &s) {
-    const StationAccess &a = s.access;
-    return a.present &&
-           (a.accessible || a.hasAccessibleToilet || !a.elevators.empty() ||
-            a.hasWideGate || a.hasTactilePaving || a.hasToilet);
-}
-
-/** @brief 数值 -> 属性文本。 */
-std::string f(double v) {
-    char b[64];
-    std::snprintf(b, sizeof(b), "%.2f", v);
-    return b;
+std::string accessibilityJson(const Program &p) {
+    std::string o = "[";
+    bool first = true;
+    for (const Station &s : p.stations) {
+        if (!accessibleStation(s)) continue;
+        o += first ? "\"" : ",\"";
+        first = false;
+        o += s.name;
+        o += "\"";
+    }
+    return o + "]";
 }
 
 } // namespace
 
 std::string toHtml(const Program &p) {
-    double minX = 1, minY = 1, maxX = 0, maxY = 0;
-    bool any = false;
-    for (const Station &s : p.stations) {
-        if (!s.hasCoord) continue;
-        XY q = project(s.lon, s.lat);
-        if (!q.valid) continue;
-        minX = std::fmin(minX, q.x); maxX = std::fmax(maxX, q.x);
-        minY = std::fmin(minY, q.y); maxY = std::fmax(maxY, q.y);
-        any = true;
-    }
-    if (!any) { minX = 0; minY = 0; maxX = 1; maxY = 1; }
-    // 留白按**范围的比例**算。这里不能写死一个常数：坐标是归一化墨卡托（整个地球
-    // 是 1×1），一座城市的跨度只有千分之几，加 0.04 相当于往外扩 14 度，整张图会被
-    // 压成中间一个小点。
-    double spanX = std::fmax(1e-9, maxX - minX);
-    double spanY = std::fmax(1e-9, maxY - minY);
-    minX -= spanX * 0.04; maxX += spanX * 0.04;
-    minY -= spanY * 0.04; maxY += spanY * 0.04;
-    spanX = maxX - minX;
-    spanY = maxY - minY;
-    // 画布给足分辨率：这是矢量图，但嵌进文档/README 时按内联尺寸渲染，
-    // 1600×1200 下 354 座车站的站名才算看得清（原来 1000×800 太挤）。
-    const double w = 1600.0, h = 1200.0;
-    // 等比缩放并居中：经纬度投影出来的形状不该被画布拉伸。
-    const double scale = std::fmin(w / spanX, h / spanY);
-    const double offX = (w - spanX * scale) / 2.0;
-    const double offY = (h - spanY * scale) / 2.0;
-    auto px = [&](double lon, double lat, double &x, double &y) {
-        XY q = project(lon, lat);
-        x = offX + (q.x - minX) * scale;
-        y = offY + (q.y - minY) * scale;
-    };
+    const std::string model = escJsonForHtml(toJson(p));
 
-    std::ostringstream o;
+    std::ostringstream o; // 拼 HTML，用流最省事
     o << "<!DOCTYPE html>\n<html lang=\"zh\">\n<head>\n<meta charset=\"utf-8\">\n"
+      << "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n"
       << "<title>" << esc(p.keyCity) << " 地铁线网</title>\n"
-      << "<style>body{margin:0;background:#0f1115;color:#e6e6e6;font-family:system-ui,sans-serif}"
-      << "svg{display:block;width:100%;height:auto}.legend{position:fixed;right:12px;top:12px;"
-      << "background:#1b1f27cc;border-radius:8px;padding:12px 16px;font-size:16px}"
-      << ".legend i{display:inline-block;width:18px;height:5px;margin-right:7px;vertical-align:middle}"
-      << "</style>\n</head>\n<body>\n<svg viewBox=\"0 0 " << f(w) << " " << f(h)
-      << "\" xmlns=\"http://www.w3.org/2000/svg\""
-      << " shape-rendering=\"geometricPrecision\" text-rendering=\"geometricPrecision\">\n";
-
-    for (const Line &l : p.lines) {
-        for (const Direction &d : l.directions) {
-            if (!d.revOf.empty() && d.stations.empty()) continue;
-            o << "<polyline fill=\"none\" stroke=\"" << esc(l.color.empty() ? "#888" : l.color)
-              << "\" stroke-width=\"7\" stroke-linejoin=\"round\" stroke-linecap=\"round\" points=\"";
-            for (const DirStation &s : d.stations) {
-                const Station *st = p.findStation(s.name);
-                if (st == nullptr || !st->hasCoord) continue;
-                double x = 0, y = 0;
-                px(st->lon, st->lat, x, y);
-                o << f(x) << "," << f(y) << " ";
-            }
-            o << "\"/>\n";
-        }
-    }
-    // 站名密度控制：几百座车站全标会把图糊成一片，所以大线网只标"换乘站"与
-    // 带无障碍设施的站；小线网（<= 150 站）仍然全标。这里出现的线路数按
-    // `lines[].direction[].station` 统计，同一线路的多个方向只算一次。
-    std::map<std::string, int> stationLineCount;
-    for (const Line &l : p.lines) {
-        std::set<std::string> seen;
-        for (const Direction &d : l.directions)
-            for (const DirStation &ds : d.stations) seen.insert(ds.name);
-        for (const std::string &name : seen) ++stationLineCount[name];
-    }
-    const bool dense = p.stations.size() > 150;
-    for (const Station &s : p.stations) {
-        if (!s.hasCoord) continue;
-        double x = 0, y = 0;
-        px(s.lon, s.lat, x, y);
-        const bool acc = accessibleStation(s);
-        const bool interchange = stationLineCount.count(s.name) != 0 && stationLineCount[s.name] >= 2;
-        const bool label = !dense || interchange || acc;
-        o << "<circle cx=\"" << f(x) << "\" cy=\"" << f(y)
-          << "\" r=\"" << (label ? "9" : "7") << "\" fill=\"#fff\" stroke=\""
-          << (acc ? "#2e7d32" : "#111") << "\"" << (acc ? " stroke-width=\"4\"" : "") << "/>"
-          << "\n";
-        if (!label) continue;
-        // 字号是"画布单位"：画布宽 1600 映射到阅读宽度时，30 号字约等于 16px，
-        // 站名才看得清；改画布尺寸时这两个数要一起看。
-        o << "<text x=\"" << f(x + 14) << "\" y=\"" << f(y + 9)
-          << "\" font-size=\"" << (interchange ? "30" : "26") << "\""
-          << " fill=\"#f2f4f8\" stroke=\"#000\" stroke-width=\"5\" paint-order=\"stroke\">"
-          << esc(s.name) << (acc ? " \u267f" : "") << "</text>\n";
-    }
-    o << "</svg>\n<div class=\"legend\"><b>" << esc(p.keyCity) << "</b><br/>"
-      << "<div><i style=\"background:#2e7d32\"></i>\u267f 无障碍设施</div>";
-    for (const Line &l : p.lines)
-        o << "<div><i style=\"background:" << esc(l.color.empty() ? "#888" : l.color) << "\"></i>"
-          << esc(l.name.empty() ? l.id : l.name) << "</div>";
-    o << "</div>\n</body>\n</html>\n";
+      << "<style>\n"
+      << ":root{color-scheme:dark}\n"
+      << "html,body{margin:0;height:100%;background:#0f1115;color:#e6e6e6;"
+         "font-family:system-ui,-apple-system,'Microsoft YaHei',sans-serif}\n"
+      << "#map{width:100vw;height:100vh}\n"
+      << "#map svg{display:block;width:100%;height:100%}\n"
+      << "#legend{position:fixed;right:14px;top:14px;max-height:70vh;overflow:auto;"
+         "background:#1b1f27e6;border-radius:10px;padding:10px 14px;font-size:14px;"
+         "box-shadow:0 4px 18px #0008}\n"
+      << "#legend h2{margin:0 0 8px;font-size:15px;font-weight:600}\n"
+      << "#legend .row{display:flex;align-items:center;gap:8px;padding:2px 0}\n"
+      << "#legend i{width:18px;height:5px;border-radius:3px;flex:none}\n"
+      << "#legend .acc{color:#8fd694}\n"
+      << "</style>\n</head>\n<body>\n"
+      << "<div id=\"map\"></div>\n<div id=\"legend\"></div>\n"
+      << "<script id=\"metro-model\" type=\"application/json\">" << model << "</script>\n"
+      << "<script id=\"metro-accessibility\" type=\"application/json\">"
+      << escJsonForHtml(accessibilityJson(p)) << "</script>\n"
+      << "<script>\n" << k_metroMapCore << "\n</script>\n"
+      << "<script>\n" << k_staticRenderer << "\n</script>\n"
+      << "</body>\n</html>\n";
     return o.str();
 }
 

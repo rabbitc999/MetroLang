@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
     <title>交互式地铁线路图 · MetroLang 查看器</title>
-    <!-- 样式与脚本从原 Page/map.html 拆出来，绘图逻辑一行未改 -->
+    <!-- 样式从原 Page/map.html 拆出来；绘图计算在 js/metro_mapcore.js，交互层在 js/app.js -->
     <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
@@ -51,6 +51,8 @@
     </div>
 
     <script src="js/d3.min.js"></script>
+    <!-- 绘图内核（几何 / 配色 / 模型构建）先加载；app.js 只剩 D3 交互层 -->
+    <script src="js/metro_mapcore.js"></script>
     <script src="js/app.js"></script>
     <script src="js/loader.js"></script>
 </body>

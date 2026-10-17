@@ -22,13 +22,10 @@
 .DEFAULT_GOAL := all
 
 # 独立 make 时也检测可用的 Python 3；构建入口可通过 PYTHON 传入检测结果。
-ifeq ($(OS),Windows_NT)
-PYTHON_NULL := NUL
-else
-PYTHON_NULL := /dev/null
-endif
-PYTHON ?= $(or $(shell python3 -c "import sys; print('python3' if sys.version_info.major == 3 else '')" 2>$(PYTHON_NULL)), \
-              $(shell python -c "import sys; print('python' if sys.version_info.major == 3 else '')" 2>$(PYTHON_NULL)))
+# 丢弃 stderr 用 /dev/null 两平台通用（Git Bash 下 "2>NUL" 会被当成写文件 NUL，
+# 在仓库里落一个 NUL 文件，git add 直接失败）。
+PYTHON ?= $(or $(shell python3 -c "import sys; print('python3' if sys.version_info.major == 3 else '')" 2>/dev/null), \
+              $(shell python -c "import sys; print('python' if sys.version_info.major == 3 else '')" 2>/dev/null))
 PYTHON := $(PYTHON)
 ifeq ($(strip $(PYTHON)),)
 $(error 找不到可用的 Python 3，请安装 python3 或 python，或设置 PYTHON)
@@ -72,6 +69,9 @@ OBJS := \
 
 TMPL_SRC := $(wildcard $(CURDIR)/template/templates/*.tmpl)
 
+# 绘图层：内核（浏览器与 C++ 共用）与静态渲染层，构建期内嵌成 metro_mapcore.hpp。
+MAPCORE_SRC := $(CURDIR)/map_view/js/metro_mapcore.js $(CURDIR)/template/static/metro_static_render.js
+
 # 头文件依赖：改 metro_model.hpp / metro_semantics.hpp 这类公共头时，
 # 所有包含它的目标文件都要重编，否则结构体布局会在不同 .o 之间不一致。
 DEPS := $(OBJS:.o=.d)
@@ -86,6 +86,10 @@ $(GEN)/metro_templates.hpp: $(TMPL_SRC) $(CURDIR)/tools/embed_templates.py
 	@mkdir -p $(GEN)
 	$(PYTHON) $(CURDIR)/tools/embed_templates.py --out $@ $(TMPL_SRC)
 
+$(GEN)/metro_mapcore.hpp: $(MAPCORE_SRC) $(CURDIR)/tools/embed_mapcore.py
+	@mkdir -p $(GEN)
+	$(PYTHON) $(CURDIR)/tools/embed_mapcore.py --out $@ $(MAPCORE_SRC)
+
 # 下面这条自检的提示语只能写 ASCII：Windows 上的 mingw32-make 构造命令行时会把
 # 参数按 ANSI(CP936) 转一遍，中文消息里奇数个字节会把紧邻的转义引号吃掉，整条
 # 命令被拆成几段，报 `unexpected EOF while looking for matching '"'`。
@@ -96,7 +100,7 @@ $(GEN)/parser.cpp: $(CURDIR)/metrolang.gram $(CURDIR)/epilogue/metro_parse.cpp $
 	$(PARSER) $(CURDIR)/metrolang.gram --lang cpp17 --out-dir $(GEN)
 	@test -s $(GEN)/parser.cpp || { echo "ParseEngine generation failed - see errors above (old parser.cpp removed)"; exit 1; }
 
-gen: $(GEN)/parser.cpp $(GEN)/metro_templates.hpp
+gen: $(GEN)/parser.cpp $(GEN)/metro_templates.hpp $(GEN)/metro_mapcore.hpp
 
 $(BUILD)/obj/src/%.o: $(CURDIR)/src/%.cpp
 	@mkdir -p $(dir $@)
@@ -119,6 +123,7 @@ $(BUILD)/obj/gen/%.o: $(GEN)/%.cpp
 	$(CXX) $(CXXFLAGS) $(INCS) -c $< -o $@
 
 $(BUILD)/obj/src/decompile.o: $(GEN)/metro_templates.hpp
+$(BUILD)/obj/src/html.o: $(GEN)/metro_mapcore.hpp
 
 $(BIN): $(OBJS)
 	$(CXX) $(CXXFLAGS) $(OBJS) -o $@
