@@ -14,8 +14,9 @@
  * 设计取舍：
  *   - 不依赖任何 npm 包（`vscode` 由宿主提供，LSP 客户端是 `src/lspClient.js`
  *     手写的最小 JSON-RPC），不需要构建步骤，也不需要联网；
- *   - 服务器就是编译器：`build/metro-lang/metro-lang(.exe)`，找不到时提示
- *     先 `make`，或用设置 `metro-lang.serverPath` 指过去；
+ *   - 服务器就是编译器：`bin/metro-lang(.exe)`（打 VSIX 时内嵌的那份），
+ *     其次工作区 `build/metro-lang/`，最后 PATH；也可用设置
+ *     `metro-lang.serverPath` 显式指定；
  *   - 块折叠沿用 `src/metroFolding.js`（纯计算，不引用 `vscode`）。
  */
 
@@ -25,6 +26,7 @@ const fs = require('node:fs');
 
 const metroFolding = require('./src/metroFolding');
 const { LspClient } = require('./src/lspClient');
+const locator = require('./src/locator');
 
 /** 语言 id，与 package.json 里的 contributes.languages 保持一致。 */
 const LANGUAGE_ID = 'metro-lang';
@@ -56,40 +58,29 @@ function clientOptions() {
 }
 
 /**
- * 解析 `metro-lang` 可执行文件：设置优先，其次工作区与仓库的构建产物。
+ * 解析 `metro-lang` 可执行文件：设置 → 扩展内嵌 bin/ → 工作区 build/ → PATH。
  *
- * @returns {string|null} 可执行文件绝对路径；找不到返回 null。
+ * @returns {{server: string|null, source: string}} 可执行文件与来源说明。
  */
 function locateServer() {
   const configured = vscode.workspace.getConfiguration('metro-lang').get('serverPath');
-  if (typeof configured === 'string' && configured.trim()) return path.resolve(configured.trim());
-
-  const exe = process.platform === 'win32' ? 'metro-lang.exe' : 'metro-lang';
-  const candidates = [];
-  for (const folder of vscode.workspace.workspaceFolders || []) {
-    candidates.push(path.join(folder.uri.fsPath, 'build', 'metro-lang', exe));
-  }
-  // 插件装在仓库的 vscode/ 里时，直接找旁边的构建产物。
-  candidates.push(path.join(__dirname, '..', 'build', 'metro-lang', exe));
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) return candidate;
-  }
-  return null;
+  const workspaceDir = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  return locator.resolveServer(workspaceDir, configured, __dirname);
 }
 
 /**
  * 启动（或重启）`metro-lang lsp`，并把当前打开的文档同步过去。
  */
 async function startServer() {
-  const bin = locateServer();
+  const { server: bin, source } = locateServer();
   if (!bin) {
-    const message = 'MetroLang：找不到 metro-lang 可执行文件。先在仓库根 `make`，'
-      + '或把设置 `metro-lang.serverPath` 指到编译好的二进制。';
+    const message = `MetroLang：找不到 metro-lang 可执行文件（${source}）。`
+      + '先在仓库根 `make`，或把设置 `metro-lang.serverPath` 指到编译好的二进制。';
     outputChannel.appendLine(message);
     void vscode.window.showWarningMessage(message);
     return;
   }
-  outputChannel.appendLine(`[lsp] 启动 ${bin} lsp`);
+  outputChannel.appendLine(`[lsp] 启动 ${bin} lsp（来源：${source}）`);
 
   const instance = new LspClient(bin, ['lsp'], clientOptions());
   instance.on('log', (line) => outputChannel.appendLine(`[lsp:stderr] ${line}`));

@@ -25,3 +25,9 @@ __pycache__/
 .idea/
 .DS_Store
 Thumbs.db
+
+# vscode/ 打包产物与依赖：内嵌编译器 bin/ 由 tools/embed-compiler.js 生成，
+# .vsix 落在 vscode/dist/，两者都不进版本库。
+/vscode/bin/
+/vscode/node_modules/
+/vscode/dist/

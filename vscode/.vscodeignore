@@ -1,7 +1,12 @@
-.vscode/**
-src/**
+# 打包成 .vsix 时不带这些：源码测试、编辑器构建产物、示例截图等。
 test/**
 tools/**
+dist/**
+.vscodeignore
+obj/**
 node_modules/**
-**/*.map
-**/.DS_Store
+package-lock.json
+*.vsix
+# 注意：bin/ 是**内嵌的编译器**（tools/embed-compiler.js 打包前放进去的），
+# 必须随包发出去，所以这里不忽略它。
+.vscode/**

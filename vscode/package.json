@@ -9,6 +9,9 @@
     "email": "rabbitc999@outlook.com"
   },
   "license": "MIT",
+  "devDependencies": {
+    "@vscode/vsce": "^3.2.1"
+  },
   "engines": {
     "vscode": "^1.75.0"
   },
@@ -22,6 +25,13 @@
     "parseengine"
   ],
   "main": "./extension.js",
+  "scripts": {
+    "embed": "node tools/embed-compiler.js",
+    "check": "node tools/check-manifest.js",
+    "test": "node test/smoke.js && node test/lsp.js",
+    "vscode:prepublish": "node tools/embed-compiler.js",
+    "package": "node tools/package.js"
+  },
   "icon": "icon.png",
   "activationEvents": [
     "onLanguage:metro-lang",
