@@ -1,0 +1,5 @@
+{% for c in p.crowds %}CROWD_PROFILE {{ c.dirId }}
+{% for e in c.periods %}    PERIOD {{ e.start }} {{ e.end }} {{ e.factor }}{{ e.daySuffix }}
+{% endfor %}END_DEFINE
+
+{% endfor %}

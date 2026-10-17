@@ -1,0 +1,5 @@
+{% for h in p.headways %}HEADWAY_PROFILE {{ h.lineId }}
+{% for e in h.periods %}    PERIOD {{ e.start }} {{ e.end }} {{ e.seconds }}{{ e.daySuffix }}
+{% endfor %}END_DEFINE
+
+{% endfor %}

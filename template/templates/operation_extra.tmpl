@@ -1,0 +1,10 @@
+{% if p.hasDwellRules %}DWELL_TIME_DEFINE
+{% for d in p.dwellRules %}    {{ d }}
+{% endfor %}END_DEFINE
+
+{% endif %}{% for s in p.speedLimits %}SPEED_LIMIT_DEFINE {{ s.dirId }}
+    NODE {{ s.from }} {{ s.to }} {{ s.kmh }}
+END_DEFINE
+
+{% endfor %}{% for w in p.specialLineLines %}{{ w }}
+{% endfor %}

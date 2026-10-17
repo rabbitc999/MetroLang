@@ -10,6 +10,7 @@
 #include "metro_templates.hpp"
 #include "template/engine.hpp"
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <memory>
@@ -60,6 +61,26 @@ std::string listLit(const std::vector<std::string> &items) {
 std::string upper(std::string v) {
     for (char &c : v) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
     return v;
+}
+
+/**
+ * @brief `PERIOD` 行尾的星期修饰符：`WORKDAY` / `WEEKEND` / 显式星期列表。
+ *
+ * 没有星期限定段时不写后缀（= 每天）；恰好是周一到周五写 `WORKDAY`，
+ * 周六周日写 `WEEKEND`，其余情况按 `MON TUE …` 逐个列出，读回来等价。
+ */
+std::string daySuffix(const DaySet &days) {
+    if (days.any || days.days.empty()) return "";
+    std::vector<std::string> sorted = days.days;
+    for (std::string &d : sorted) d = upper(d);
+    std::sort(sorted.begin(), sorted.end());
+    static const std::vector<std::string> kWorkday{"FRI", "MON", "THU", "TUE", "WED"};
+    static const std::vector<std::string> kWeekend{"SAT", "SUN"};
+    if (sorted == kWorkday) return " WORKDAY";
+    if (sorted == kWeekend) return " WEEKEND";
+    std::string out;
+    for (const std::string &d : sorted) out += " " + d;
+    return out;
 }
 
 /**
@@ -303,6 +324,93 @@ std::string decompile(const Program &p) {
                  " RATE_PER_KM " + numStr(p.linearExtension.rate);
     price->insert("linearLine", Value(linear));
     root->insert("price", Value(price));
+
+    // ---- 分时段发车间隔：CROWD / HEADWAY 都是 PERIOD 表，共用同一个后缀写法 ----
+    auto headways = std::make_shared<Array>();
+    for (const HeadwayProfile &h : p.headways) {
+        auto o = std::make_shared<Object>();
+        o->insert("lineId", Value(h.lineId));
+        auto periods = std::make_shared<Array>();
+        for (const HeadwayPeriod &e : h.periods) {
+            auto pe = std::make_shared<Object>();
+            pe->insert("start", Value(e.start));
+            pe->insert("end", Value(e.end));
+            pe->insert("seconds", Value(e.seconds));
+            pe->insert("daySuffix", Value(daySuffix(e.days)));
+            periods->items.push_back(Value(pe));
+        }
+        o->insert("periods", Value(periods));
+        headways->items.push_back(Value(o));
+    }
+    root->insert("headways", Value(headways));
+
+    auto crowds = std::make_shared<Array>();
+    for (const CrowdProfile &c : p.crowds) {
+        auto o = std::make_shared<Object>();
+        o->insert("dirId", Value(c.dirId));
+        auto periods = std::make_shared<Array>();
+        for (const CrowdPeriod &e : c.periods) {
+            auto pe = std::make_shared<Object>();
+            pe->insert("start", Value(e.start));
+            pe->insert("end", Value(e.end));
+            pe->insert("factor", Value(numStr(e.factor)));
+            pe->insert("daySuffix", Value(daySuffix(e.days)));
+            periods->items.push_back(Value(pe));
+        }
+        o->insert("periods", Value(periods));
+        crowds->items.push_back(Value(o));
+    }
+    root->insert("crowds", Value(crowds));
+
+    // ---- 停站时间覆盖：NODE 行要带线路 ID（只给站名的 NODE 会被读成线路级）----
+    auto dwellRules = std::make_shared<Array>();
+    for (const DwellRule &d : p.dwellRules) {
+        std::string line;
+        switch (d.kind) {
+            case DwellRule::Node:
+                line = "NODE " + quote(d.station) + " " + d.lineId + " " + numStr(d.seconds);
+                break;
+            case DwellRule::Direction:
+                line = "DIRECTION " + d.dirId + " " + numStr(d.seconds);
+                break;
+            default:
+                line = "LINE " + d.lineId + " " + numStr(d.seconds);
+                break;
+        }
+        dwellRules->items.push_back(Value(line));
+    }
+    root->insert("hasDwellRules", Value(!p.dwellRules.empty()));
+    root->insert("dwellRules", Value(dwellRules));
+
+    // ---- 区间限速 ----
+    auto speedLimits = std::make_shared<Array>();
+    for (const SpeedLimitRule &s : p.speedLimits) {
+        auto o = std::make_shared<Object>();
+        o->insert("dirId", Value(s.dirId));
+        o->insert("from", Value(quote(s.from)));
+        o->insert("to", Value(quote(s.to)));
+        o->insert("kmh", Value(numStr(s.kmh)));
+        speedLimits->items.push_back(Value(o));
+    }
+    root->insert("hasSpeedLimits", Value(!p.speedLimits.empty()));
+    root->insert("speedLimits", Value(speedLimits));
+
+    // ---- 特殊线路票价：`ALL 票价` 与 `SEGMENT '起' '终' 票价` 两种写法 ----
+    std::vector<std::string> specialLines;
+    if (p.defaultFare > 0) specialLines.push_back("FARE_DEFAULT " + numStr(p.defaultFare));
+    if (p.fareCap > 0) specialLines.push_back("FARE_CAP " + numStr(p.fareCap));
+    for (const SpecialLineFare &s : p.specialLines) {
+        if (s.all) {
+            specialLines.push_back("SPECIAL_LINE " + s.lineId + " ALL " + numStr(s.fare));
+            continue;
+        }
+        if (!s.from.empty() || !s.to.empty())
+            specialLines.push_back("SPECIAL_LINE " + s.lineId + " SEGMENT " + quote(s.from) + " " +
+                                   quote(s.to) + " " + numStr(s.fare));
+    }
+    auto specialLineArray = std::make_shared<Array>();
+    for (const std::string &w : specialLines) specialLineArray->items.push_back(Value(w));
+    root->insert("specialLineLines", Value(specialLineArray));
 
     auto raws = std::make_shared<Array>();
     for (const RawLine &r : p.raw) raws->items.push_back(Value(r.text));

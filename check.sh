@@ -89,6 +89,41 @@ fi
 # 5) route：最短时间路径。
 step "route $FROM → $TO" "$DEMO" route "$SAMPLE" --from "$FROM" --to "$TO"
 
+# 6) route --json：结构化输出里要有 summary / segments 两段，供插件与查看器消费。
+count=$((count + 1))
+if "$DEMO" route "$SAMPLE" --from "$FROM" --to "$TO" --json >"$CHECK_TMP/route.json" 2>"$CHECK_TMP/route.err"; then
+    if grep -q '"summary"' "$CHECK_TMP/route.json" && grep -q '"segments"' "$CHECK_TMP/route.json"; then
+        echo "[ok]   route --json 含 summary / segments"
+    else
+        echo "[FAIL] route --json 缺少 summary / segments"
+        fail=1
+    fi
+else
+    echo "[FAIL] route --json 执行失败"
+    sed 's/^/       /' "$CHECK_TMP/route.err"
+    fail=1
+fi
+
+# 7) coords：坐标校正体检（默认 auto 模式，样例要么无坐标要么已是 WGS-84）。
+step "coords $SAMPLE" "$DEMO" coords "$SAMPLE"
+
+# 8) 完整往返：带运营规则的大样例（发车间隔 / 拥挤度 / 停站覆盖 / 限速 / 特殊票价），
+#    这些块以前只落在 raw 里，反编译会整段丢掉。这里做一次 JSON 级对比。
+FULL=${FULL:-samples/guangzhou.m}
+if [ -f "$FULL" ]; then
+    count=$((count + 1))
+    if "$DEMO" compile "$FULL" -o "$CHECK_TMP/full.json" 2>"$CHECK_TMP/full.err" &&
+       "$DEMO" decompile "$CHECK_TMP/full.json" -o "$CHECK_TMP/full.roundtrip.metro" 2>>"$CHECK_TMP/full.err" &&
+       "$DEMO" compile "$CHECK_TMP/full.roundtrip.metro" -o "$CHECK_TMP/full.roundtrip.json" 2>>"$CHECK_TMP/full.err" &&
+       diff -q "$CHECK_TMP/full.json" "$CHECK_TMP/full.roundtrip.json" >/dev/null 2>&1; then
+        echo "[ok]   大样例往返零差异（$FULL）"
+    else
+        echo "[FAIL] 大样例往返有差异（$FULL）"
+        sed 's/^/       /' "$CHECK_TMP/full.err"
+        fail=1
+    fi
+fi
+
 # ---- 汇总 ----
 echo
 if [ "$fail" -eq 0 ]; then
