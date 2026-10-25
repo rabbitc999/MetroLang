@@ -54,7 +54,7 @@
         var routes = core.planRoute(model, layout);
         var legend = core.buildLegend(model);
 
-        // 站名密度：大线网只标换乘站与无障碍站，小线网全标。
+        // 站名密度：只影响字号与"是否画圆点序号"，标签最终给谁由下面的避让决定。
         var stationCount = Object.keys(model.stations).length;
         var dense = stationCount > 150;
 
@@ -70,6 +70,10 @@
         });
 
         // ---- 车站 ----
+        // 标签统一右对齐排布（与 metro_editor 的图一致：圆点在左、站名向右）。
+        // 所有站都是候选，按"无障碍站 > 换乘站 > 普通站"的优先级贪心占位：
+        // 大线网市中心几十站叠在一起，不避让文字会糊成一片，全标出来反而更看不清。
+        var labels = [];
         var names = Object.keys(model.stations);
         names.forEach(function (name) {
             var station = model.stations[name];
@@ -85,17 +89,37 @@
             });
             var interchange = Object.keys(groups).length >= 2;
             var acc = !!accessibleSet[name];
-            var label = !dense || interchange || acc;
 
             svg.push('<circle cx="' + p[0].toFixed(2) + '" cy="' + p[1].toFixed(2) + '" r="' +
-                (label ? 9 : 7) + '" fill="#fff" stroke="' + (acc ? '#2e7d32' : '#111') + '"' +
+                (dense ? (interchange ? 9 : 7) : 9) + '" fill="#fff" stroke="' + (acc ? '#2e7d32' : '#111') + '"' +
                 (acc ? ' stroke-width="4"' : '') + '/>');
 
-            if (!label) return;
             // 字号是画布单位：1600 宽映射到阅读宽度时，30 号字约 16px。
-            svg.push('<text x="' + (p[0] + 14).toFixed(2) + '" y="' + (p[1] + 9).toFixed(2) +
-                '" font-size="' + (interchange ? 30 : 26) + '" fill="#f2f4f8" stroke="#000" ' +
-                'stroke-width="5" paint-order="stroke">' + esc(name) + (acc ? ' \u267f' : '') + '</text>');
+            // 密集线网稍微收小一档，给避让多留点空隙。
+            var fontSize = interchange ? (dense ? 26 : 30) : (dense ? 22 : 26);
+            labels.push({
+                name: name, x: p[0], y: p[1], acc: acc, fontSize: fontSize,
+                // 经验宽度：中文按 1em，ASCII 按 0.55em，再加圆点偏移 14。
+                w: textWidth(name, fontSize) + 14,
+                // 无障碍站会额外标 ♿，多留一个字的宽度；它优先级也最高。
+                rank: acc ? 3 : (interchange ? 2 : 1)
+            });
+        });
+
+        // 优先级高的先占位：无障碍站要带 ♿，排在最前。
+        labels.sort(function (a, b) { return b.rank - a.rank; });
+        var placed = [];
+        labels.forEach(function (lb) {
+            var h = lb.fontSize * 1.05;
+            var box = { x0: lb.x + 14, x1: lb.x + 14 + lb.w, y0: lb.y - h / 2, y1: lb.y + h / 2 };
+            for (var i = 0; i < placed.length; i++) {
+                var o = placed[i];
+                if (box.x0 < o.x1 && box.x1 > o.x0 && box.y0 < o.y1 && box.y1 > o.y0) return;
+            }
+            placed.push(box);
+            svg.push('<text x="' + (lb.x + 14).toFixed(2) + '" y="' + (lb.y + lb.fontSize * 0.34).toFixed(2) +
+                '" font-size="' + lb.fontSize + '" fill="#f2f4f8" stroke="#000" ' +
+                'stroke-width="5" paint-order="stroke">' + esc(lb.name) + (lb.acc ? ' \u267f' : '') + '</text>');
         });
 
         svg.push('</svg>');
@@ -111,6 +135,20 @@
                 esc(item.name) + '</div>');
         });
         document.getElementById('legend').innerHTML = legendHtml.join('');
+    }
+
+    /**
+     * @brief 估算文本在给定字号下的像素宽度（不依赖 canvas measureText，离线也能算）。
+     * @param {string} text 文本。
+     * @param {number} fontSize 字号（画布单位）。
+     * @return {number} 宽度。
+     */
+    function textWidth(text, fontSize) {
+        var em = 0;
+        for (var i = 0; i < text.length; i++) {
+            em += text.charCodeAt(i) > 0x2e7f ? 1 : 0.55;
+        }
+        return em * fontSize;
     }
 
     /** @brief 首次渲染 + 窗口变化时重排（无状态，直接重画）。 */

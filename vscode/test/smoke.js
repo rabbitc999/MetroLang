@@ -79,6 +79,20 @@ const { execFileSync } = require('node:child_process');
 execFileSync(process.execPath, ['--check', path.join(pluginDir, 'extension.js')], { stdio: 'pipe' });
 check(true, 'extension.js 通过 node --check 语法检查');
 
+// ---- 4. 预览命令必须接受标题栏传来的 uri ----
+// 编辑器标题栏按钮调用命令时会带一个 Uri 参数；早先的 previewMap() 不收参数、
+// 一律读 activeTextEditor，导致「在 A 文件上点过预览后，切到 B 再点，出的是 A 的图」。
+// 这条属于不可见的错图，编译器与测试都不会报，只能靠读源码守住。
+const extensionSource = fs.readFileSync(path.join(pluginDir, 'extension.js'), 'utf8');
+check(/async function previewMap\(target\)/.test(extensionSource),
+  'previewMap 接收标题栏传来的 target 参数');
+check(/target instanceof vscode\.Uri/.test(extensionSource),
+  'previewMap 识别 vscode.Uri 并据此定位文档');
+check(/metro\.previewMapFile/.test(extensionSource), '注册了「从文件预览地图」命令');
+check(/metro\.previewMapFile/.test(JSON.stringify(manifest.contributes.commands || [])),
+  'package.json 声明了 metro.previewMapFile');
+check(/onDidSaveTextDocument/.test(extensionSource), '保存后自动重绘');
+
 console.log();
 if (failed === 0) {
   console.log('插件冒烟测试全部通过');

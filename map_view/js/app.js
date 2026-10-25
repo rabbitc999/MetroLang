@@ -88,6 +88,64 @@
             let currentMode = 'all';
             let currentHighlightGroupKey = 'all';
             let routeStationNames = [];
+            // 标签避让：记录最近一次布局参数，避免平移时每帧全量重排。
+            let lastLabelLayout = { k: 0, tx: 1e9, ty: 1e9 };
+            let labelLayoutScheduled = false;
+
+            /** 估算标签屏幕宽度：CJK 每字约 1em，ASCII 约 0.55em；字号与缩放回调和一致（clamp 到 2~8px）。 */
+            function labelScreenWidth(d, k) {
+                let em = 0;
+                for (const ch of d.name) em += ch.charCodeAt(0) > 0x2e7f ? 1 : 0.55;
+                const fontSize = Math.min(8, Math.max(2, LABEL_BASE_SIZE / k));
+                return em * fontSize + 6;
+            }
+
+            /**
+             * 贪心标签避让：换乘站优先、多线站次之，从上往下扫，
+             * 屏幕矩形与已放置的重叠就隐藏。结果通过 display 呈现，
+             * 不和 updateStyles 的 opacity 逻辑打架。
+             */
+            function updateLabelVisibility(k, tx, ty) {
+                const placed = [];
+                const order = stationData.slice().sort((a, b) => {
+                    const pa = a.isTransfer ? 3 : (a.dirKeys.length > 1 ? 2 : 1);
+                    const pb = b.isTransfer ? 3 : (b.dirKeys.length > 1 ? 2 : 1);
+                    if (pb !== pa) return pb - pa;
+                    return a.y - b.y;
+                });
+                const visible = new Set();
+                for (const d of order) {
+                    const w = labelScreenWidth(d, k);
+                    const h = LABEL_BASE_SIZE + 3;
+                    const cx = d.x * k + tx;
+                    const cy = (d.y - LABEL_BASE_SIZE) * k + ty;
+                    let collide = false;
+                    for (const r of placed) {
+                        if (Math.abs(cx - r.cx) < (w + r.w) / 2 &&
+                            Math.abs(cy - r.cy) < (h + r.h) / 2) {
+                            collide = true;
+                            break;
+                        }
+                    }
+                    if (collide) continue;
+                    placed.push({ cx, cy, w, h });
+                    visible.add(d.name);
+                }
+                stationLabels.style("display", d => visible.has(d.name) ? null : "none");
+            }
+
+            /** 布局参数变化超过阈值才重排，平移拖动时走 rAF 合帧。 */
+            function scheduleLabelLayout(transform) {
+                lastLabelLayout.k = transform.k;
+                lastLabelLayout.tx = transform.x;
+                lastLabelLayout.ty = transform.y;
+                if (labelLayoutScheduled) return;
+                labelLayoutScheduled = true;
+                requestAnimationFrame(() => {
+                    labelLayoutScheduled = false;
+                    updateLabelVisibility(lastLabelLayout.k, lastLabelLayout.tx, lastLabelLayout.ty);
+                });
+            }
 
             const zoom = d3.zoom()
                 .scaleExtent([0.15, 10])
@@ -104,6 +162,7 @@
                             return size + "px";
                         });
 
+                    scheduleLabelLayout(transform);
                     updateStyles(currentZoomK);
                 });
 
@@ -1132,6 +1191,8 @@
             setAllMode();
             legendDiv.style("display", "block");
             bindRoutePanel();
+            // 首帧：在 zoom 事件之外先排一次标签，避免初始状态下全部叠在一起。
+            updateLabelVisibility(currentZoomK, 0, 0);
         }
         // ============================================================
         //  4. 信息面板

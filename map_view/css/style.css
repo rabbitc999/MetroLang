@@ -14,6 +14,16 @@
             position: relative;
         }
 
+        /* ---------- 站名标签（与 metro_editor/Page/map.html 的 .station-label 同款；
+           不带 opacity 过渡是因为可见性用 display 控制，过渡放在坐标/字号上即可） ---------- */
+        .station-label {
+            font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+            text-shadow: 0 0 4px #fff, 0 0 4px #fff, 0 0 6px #fff;
+            user-select: none;
+            pointer-events: none;
+            transition: opacity 0.25s;
+        }
+
         #controls {
             position: absolute;
             top: 20px;

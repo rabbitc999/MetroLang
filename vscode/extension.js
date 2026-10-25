@@ -52,6 +52,12 @@ let opened = new Set();
 /** @type {vscode.WebviewPanel|null} 地图预览面板（复用，避免越开越多）。 */
 let previewPanel = null;
 
+/** @type {vscode.TextDocument|null} 最近一次激活过的模型文档（面板夺焦时兜底）。 */
+let lastMetroDocument = null;
+
+/** @type {string} 预览面板当前展示的文档 URI；保存自动重绘只认它。 */
+let previewSourceUri = '';
+
 /** 启动选项：服务器路径由 locator 决定，其余默认。 */
 function clientOptions() {
   return { cwd: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath };
@@ -171,26 +177,88 @@ function toVscodeDiagnostic(item) {
 }
 
 /**
- * 打开（或刷新）地图预览面板。
+ * 当前上下文里的模型文档：活动编辑器优先，否则取最近一次激活过的 `.m` / `.metro`。
  *
- * 当前文档经 LSP 的 `metro/previewMap` 编译成自包含 HTML；编译失败时
- * 面板里列出错误，不弹窗打断。
+ * 预览面板常驻在侧边、焦点在面板上时 `activeTextEditor` 是空的，
+ * 这时用 `lastMetroDocument` 兜底，免得用户还要回来点一下源码。
+ *
+ * @return {vscode.TextDocument|null} 模型文档。
  */
-async function previewMap() {
+function activeMetroDocument() {
   const editor = vscode.window.activeTextEditor;
-  if (!editor || editor.document.languageId !== LANGUAGE_ID) {
-    void vscode.window.showWarningMessage('MetroLang：先把一个 .metro 文档设为活动编辑器。');
+  if (editor && editor.document.languageId === LANGUAGE_ID) {
+    lastMetroDocument = editor.document;
+    return editor.document;
+  }
+  return lastMetroDocument || null;
+}
+
+/**
+ * 「预览地图」：编辑器标题栏按钮会传入 `uri`，命令面板则是空的。
+ *
+ * 传了 uri 就用它——标题栏按钮上那张图，本来就该渲染它对应的文件，
+ * 不能靠 `activeTextEditor` 猜（焦点在预览面板时不代表"当前文档"）。
+ *
+ * @param {vscode.Uri|{fsPath?: string, path?: string}|undefined} target 目标文件。
+ */
+async function previewMap(target) {
+  let document = null;
+  const uri = target instanceof vscode.Uri ? target
+    : (target && typeof target === 'object' && (target.fsPath || target.path))
+      ? vscode.Uri.file(target.fsPath || target.path)
+      : null;
+
+  if (uri) {
+    const open = vscode.workspace.textDocuments.find(
+      (doc) => doc.uri.toString() === uri.toString());
+    document = open || await vscode.workspace.openTextDocument(uri);
+  } else {
+    document = activeMetroDocument();
+  }
+
+  if (!document) {
+    void vscode.window.showWarningMessage(
+      'MetroLang：当前编辑器不是 .metro / .m 文档。切到模型文件再预览，'
+      + '或者用「MetroLang: 从文件预览地图」显式选一个。');
     return;
   }
-  const document = editor.document;
-  if (!client || !client.running) {
-    await startServer();
+  await previewDocument(document);
+}
+
+/**
+ * 从文件预览：不依赖当前活动编辑器，直接挑一个 `.m` / `.metro` 出图。
+ *
+ * 命令行 `metro-lang html x.m` 的等价入口。用对话框只是为了"选源文件"，
+ * 不要求先把它打开成活动编辑器——预览窗口可以在旁边，源码可以不开。
+ */
+async function previewMapFromFile() {
+  const picked = await vscode.window.showOpenDialog({
+    canSelectMany: false,
+    openLabel: '预览地图',
+    filters: { 'MetroLang 模型': ['m', 'metro', 'txt'] },
+  });
+  if (!picked || picked.length === 0) return;
+  const uri = picked[0];
+  const document = await vscode.workspace.openTextDocument(uri);
+  await previewDocument(document);
+}
+
+/**
+ * 指定文档渲染成预览面板（不要求它是活动编辑器）。
+ *
+ * @param {vscode.TextDocument} document 模型文档。
+ */
+async function previewDocument(document) {
+  // 标题栏按钮/文件对话框拿到的文档可能还没被语言关联（`.txt` 之类），
+  // 所以按扩展名再放行一次，而不是只认 languageId。
+  const looksLikeModel = document && /\.(m|metro)$/i.test(document.fileName || '');
+  if (!document || (document.languageId !== LANGUAGE_ID && !looksLikeModel)) {
+    void vscode.window.showWarningMessage('MetroLang：这个文件不是 .metro / .m 模型。');
+    return;
   }
+  if (!client || !client.running) await startServer();
   if (!client || !client.running) return;
-
-  // 未打开过的文档先补一次 didOpen，服务器端才有内容。
   syncOpen(document);
-
   let result;
   try {
     result = await client.request('metro/previewMap', {
@@ -200,30 +268,48 @@ async function previewMap() {
     void vscode.window.showErrorMessage(`MetroLang：地图预览失败（${error.message}）`);
     return;
   }
+  previewSourceUri = document.uri.toString();
+  showMapResult(result, document);
+}
+
+/**
+ * 把 `metro/previewMap` 的结果塞进面板：成功画图，失败把诊断列出来。
+ *
+ * @param {any} result LSP 响应。
+ * @param {vscode.TextDocument} document 源文档（只用于面板标题与日志）。
+ */
+function showMapResult(result, document) {
   if (!result || !result.ok) {
     const lines = (result && result.errors ? result.errors : ['未知错误']).join('\n');
     showPreviewHtml(`<!doctype html><meta charset="utf-8"><title>MetroLang 地图预览</title>
       <body style="font-family: sans-serif; background: #faf7fa; color: #333; padding: 24px;">
-      <h2>编译失败，暂时出不了图</h2><pre style="white-space: pre-wrap;">${escapeHtml(lines)}</pre></body>`);
+      <h2>编译失败，暂时出不了图</h2><pre style="white-space: pre-wrap;">${escapeHtml(lines)}</pre></body>`,
+      document ? document.fileName : undefined);
     return;
   }
-  showPreviewHtml(result.html);
+  showPreviewHtml(result.html, document ? document.fileName : undefined);
   outputChannel.appendLine(`[preview] ${document.fileName} → ${result.html.length} 字节`);
 }
 
 /**
  * 显示（或复用）预览面板。
  *
+ * 标题带源文件名（`MetroLang 预览 — nanjing.m`）：预览面板常驻侧边，
+ * 不写清是谁，很容易对着一张旧图找半天原因。
+ *
  * @param {string} html 面板内容。
+ * @param {string} [fileName] 源文档文件名，仅用于标题。
  */
-function showPreviewHtml(html) {
+function showPreviewHtml(html, fileName) {
+  const title = 'MetroLang 预览' + (fileName ? ' — ' + fileName.replace(/^.*[\\/]/, '') : '');
   if (previewPanel) {
+    previewPanel.title = title;
     previewPanel.webview.html = html;
     previewPanel.reveal(vscode.ViewColumn.Beside);
     return;
   }
   previewPanel = vscode.window.createWebviewPanel(
-    'metroPreview', 'MetroLang 地图预览', vscode.ViewColumn.Beside,
+    'metroPreview', title, vscode.ViewColumn.Beside,
     { enableScripts: true, retainContextWhenHidden: true },
   );
   previewPanel.webview.html = html;
@@ -365,12 +451,11 @@ function symbolKind(kind) {
  * 是为了不引人额外的 UI 依赖——需要图形化的人走「数据预览」。
  */
 async function queryRoute() {
-  const editor = vscode.window.activeTextEditor;
-  if (!editor || editor.document.languageId !== LANGUAGE_ID) {
+  const document = activeMetroDocument();
+  if (!document) {
     void vscode.window.showWarningMessage('MetroLang：先把一个 .metro 文档设为活动编辑器。');
     return;
   }
-  const document = editor.document;
   if (!client || !client.running) await startServer();
   if (!client || !client.running) return;
   syncOpen(document);
@@ -413,12 +498,11 @@ async function queryRoute() {
  * 放进一个 Webview，方便改数据时对账。
  */
 async function previewData() {
-  const editor = vscode.window.activeTextEditor;
-  if (!editor || editor.document.languageId !== LANGUAGE_ID) {
+  const document = activeMetroDocument();
+  if (!document) {
     void vscode.window.showWarningMessage('MetroLang：先把一个 .metro 文档设为活动编辑器。');
     return;
   }
-  const document = editor.document;
   if (!client || !client.running) await startServer();
   if (!client || !client.running) return;
   syncOpen(document);
@@ -490,6 +574,19 @@ function activate(context) {
     vscode.workspace.onDidCloseTextDocument((document) => {
       if (document.languageId === LANGUAGE_ID) syncClose(document.uri);
     }),
+    // 记最近激活的模型文档：预览面板夺走焦点后 activeTextEditor 会变空。
+    vscode.window.onDidChangeActiveTextEditor((editor) => {
+      if (editor && editor.document.languageId === LANGUAGE_ID) {
+        lastMetroDocument = editor.document;
+      }
+    }),
+    // 保存后自动重绘：只刷面板里正在看的那个文件，改别的文件不打扰。
+    vscode.workspace.onDidSaveTextDocument((document) => {
+      if (document.languageId === LANGUAGE_ID
+          && previewSourceUri === document.uri.toString()) {
+        void previewDocument(document);
+      }
+    }),
   );
   void startServer();
 
@@ -505,6 +602,7 @@ function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand('metro.openDoc', () => openLanguageReference()),
     vscode.commands.registerCommand('metro.previewMap', () => previewMap()),
+    vscode.commands.registerCommand('metro.previewMapFile', () => previewMapFromFile()),
     vscode.commands.registerCommand('metro.previewData', () => previewData()),
     vscode.commands.registerCommand('metro.queryRoute', () => queryRoute()),
     vscode.commands.registerCommand('metro.restartServer', async () => {

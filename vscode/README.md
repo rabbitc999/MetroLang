@@ -7,7 +7,7 @@ MetroLang（`.metro` / `.m`，地铁线网数据语言）的编辑器支持：
 | 语法高亮 | 关键字（块头 / `END_*` / 参数命令 / 常量）、字符串、注释、预处理指令、数字与标点 | `syntaxes/metro.tmLanguage.json`（声明式，代码零参与） |
 | 块折叠 | `*_DEFINE` / `TRANSFER_TYPE` / `POLICY` / `ATTRIBUTES` 折到对应的 `END_DEFINE` / `END_POLICY` / `END_ATTRIBUTES`；嵌套照常；一行式 `DIRECTION_DEFINE … REV …` 不带收尾、不参与配对 | `src/metroFolding.js`（纯计算，与 `metro-lang` 编译器的块栈同口径） |
 | 实时诊断 | 编辑器打字即检查：服务器就是编译器本体（`metro-lang lsp`，见 [`src/lsp.cpp`](../src/lsp.cpp)），走与磁盘编译同一条预处理 + 文法管线，错误直接标在问题上 | `src/lspClient.js`（手写最小 JSON-RPC 客户端）+ 编译器内嵌 LSP |
-| 地图预览 | 命令「Metro: 预览地图（编译当前文档）」：当前文档经 LSP 自定义请求 `metro/previewMap` 编译成自包含 HTML（与 `metro-lang html` 同一条渲染管线），在旁边面板打开；编译失败时面板里列错误 | `extension.js` + 编译器内嵌 LSP |
+| 地图预览 | 命令「Metro: 预览地图」：当前 `.m` / `.metro` 文档经 LSP 自定义请求 `metro/previewMap` 编译成自包含 HTML（与 `metro-lang html` 同一条渲染管线），在旁边面板打开；**保存即重绘**。另有「Metro: 从文件预览地图」，选一个模型文件就出图，不必先打开它；编译失败时面板里列错误 | `extension.js` + 编译器内嵌 LSP |
 | 打开语言参考 | 命令面板「Metro: 打开 MetroLang 语言参考」，直接打开仓库里的 [`doc/01-metrolang-reference.md`](../doc/01-metrolang-reference.md) | `extension.js` |
 
 设计取舍与 GramEditor / Magel 插件一致：**不依赖任何 npm 包**（`vscode` 由宿主提供，

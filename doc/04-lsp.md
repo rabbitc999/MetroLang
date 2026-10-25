@@ -134,9 +134,15 @@ metro-lang lsp            # stdin/stdout 走协议，日志走 stderr
 
 | 命令 | 走哪条路 |
 |---|---|
-| `Metro: 预览地图` | `metro/previewMap` → 打开 Webview |
+| `Metro: 预览地图` | 当前 `.m` / `.metro` 文档 → `metro/previewMap` → 打开 Webview，**保存即重绘** |
+| `Metro: 从文件预览地图` | 选一个 `.m` / `.metro` → 同上；不必先把它打开成活动编辑器 |
 | `Metro: 数据预览（统计摘要）` | `metro/dataSummary` → Webview 表格 |
 | `Metro: 查询路线（起终点 → 耗时票价）` | `metro/route` → 输出面板 |
+
+预览**不要求**先选数据文件、也不要求配解释器路径：编译器已经内嵌在插件里
+（`bin/metro-lang`，`vsce package` 时由 `tools/embed-compiler.js` 自动放进去），
+`metro/previewMap` 直接把当前缓冲区的文本编成自包含 HTML。焦点移到预览面板后
+`activeTextEditor` 会变空，插件用"最近激活过的模型文档"兜底，不用回来点一下源码。
 
 hover / 跳转定义 / 大纲 / 补全由 VS Code 原生的 LSP 通道处理，插件只负责
 `registerHoverProvider` 等三个 provider 的转发（服务端算，客户端只做位置换算）。

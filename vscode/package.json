@@ -2,7 +2,7 @@
   "name": "metro-lang-editor",
   "displayName": "MetroLang",
   "description": "MetroLang（.metro / .m）语言支持：语法高亮、块折叠、编译器内嵌 LSP 诊断与地图预览。",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "publisher": "rabbitc999",
   "author": {
     "name": "小兔糖糖OvO",
@@ -79,6 +79,10 @@
         "icon": "$(map)"
       },
       {
+        "command": "metro.previewMapFile",
+        "title": "MetroLang: 从文件预览地图"
+      },
+      {
         "command": "metro.restartServer",
         "title": "Metro: 重启语言服务器"
       },
@@ -125,6 +129,6 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://gitee.com/rabbitc999/metro-lang.git"
+    "url": "https://github.com/rabbitc999/metro-lang.git"
   }
 }

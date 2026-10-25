@@ -2,12 +2,8 @@
 
 MetroLang 是一门描述地铁线网的**数据语言**，配有把线路数据编译成 JSON、反编译回 MetroLang、渲染自包含 HTML/SVG 地图并查询最短时间路径的完整工具链。
 
-前端由本仓库的 `metrolang.gram` 经 [ParseEngine](https://gitee.com/rabbitc999/ParseEngine)
+前端由本仓库的 `metrolang.gram` 经 [ParseEngine](https://github.com/rabbitc999/ParseEngine)
 文法生成器产出，产物是一个可执行文件 `metro-lang`。
-
-> 本工程是**独立仓库** <https://gitee.com/rabbitc999/metro-lang>（早期在 ParseEngine 仓库里
-> 长大，现与 Magel、Hydra86、RustView、CAS 同例拆出）。生成器 ParseEngine 是外部依赖：
-> 本仓库只含 `.gram`，构建时自动找旁边的 ParseEngine 仓库（见下）。
 
 ## 构建与运行
 

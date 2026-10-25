@@ -3,7 +3,7 @@
 MetroLang 是地铁线网**数据语言**；本仓库是它的完整工具链（编译器 / 模板化反编译器 /
 自包含 HTML-SVG 地图 / A\* 路线查询 / 交互式查看器 / 语言服务器）。语法由
 [`metrolang.gram`](../metrolang.gram) 定义，前端经
-[ParseEngine](https://gitee.com/rabbitc999/ParseEngine) 文法生成器产出。
+[ParseEngine](https://github.com/rabbitc999/ParseEngine) 文法生成器产出。
 
 先读工具链总览 [`README.md`](../README.md)，再按下面顺序进入细节：
 
@@ -14,6 +14,7 @@ MetroLang 是地铁线网**数据语言**；本仓库是它的完整工具链（
 | [03 出行时间模型](03-travel-time-model.md) | 区间运行时间、停站、换乘与总耗时的计算模型 |
 | [04 语言服务器](04-lsp.md) | LSP 诊断、hover / 跳转定义 / 大纲 / 补全，以及 `metro/route` 等自定义请求 |
 | [05 路线规划](05-route.md) | 建图、候车与换乘代价、票价结算、输出格式，以及查看器里的轻量寻路 |
+| [06 线网调度游戏](06-game.md) | `metro-lang game`：数据集口径、**规划段与运营段的区分**、主链/支线拼接、模拟内核与测试 |
 
 相关入口：
 

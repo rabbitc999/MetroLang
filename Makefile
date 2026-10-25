@@ -12,7 +12,8 @@
 #   make        默认生成分析器 + 固化模板 + 编译出 build/metro-lang
 #   make gen    只重新生成分析器与模板头
 #   make check  样例冒烟：编译 → JSON → 反编译 → HTML → 路线
-#   make test   全部测试：样例冒烟 + 地图内核 + 数值口径 + LSP 语义
+#   make test   全部测试：样例冒烟 + 地图内核 + 数值口径 + LSP 语义 + 游戏内核
+#   make game   把广州样例做成单文件游戏页 build/metro-lang/guangzhou-game.html
 #   make svg    把深圳样例导出成 doc/shenzhen-metro.svg（README 用图）
 #   make preview 把 map_view 查看器的渲染结果导成 map_view/preview.svg
 #   make clean  清掉本工程的构建产物
@@ -60,6 +61,9 @@ OBJS := \
 	$(BUILD)/obj/src/json.o \
 	$(BUILD)/obj/src/decompile.o \
 	$(BUILD)/obj/src/html.o \
+	$(BUILD)/obj/src/game_data.o \
+	$(BUILD)/obj/src/game_html.o \
+	$(BUILD)/obj/src/game_cli.o \
 	$(BUILD)/obj/src/train_time.o \
 	$(BUILD)/obj/src/fare.o \
 	$(BUILD)/obj/src/geo.o \
@@ -77,12 +81,21 @@ TMPL_SRC := $(wildcard $(CURDIR)/template/templates/*.tmpl)
 # 绘图层：内核（浏览器与 C++ 共用）与静态渲染层，构建期内嵌成 metro_mapcore.hpp。
 MAPCORE_SRC := $(CURDIR)/map_view/js/metro_mapcore.js $(CURDIR)/template/static/metro_static_render.js
 
+# 游戏层：模拟内核、渲染层、样式、d3，构建期内嵌成 metro_game_assets.hpp。
+# 数据（game/data/*.json）**不**内嵌：`metro-lang game <file.metro>` 的数据集
+# 直接从输入的 .metro 现算（见 src/game_data.cpp），页面永远与输入一致。
+#
+# 顺序必须与 tools/embed_game.py 的 `BASE` 一致：脚本按位置把资源对到常量名。
+GAME_SRC := $(CURDIR)/game/js/sim.js $(CURDIR)/game/js/ui.js \
+            $(CURDIR)/game/css/style.css $(CURDIR)/game/js/d3.min.js
+GAME_DATA := $(CURDIR)/game/data/guangzhou.json
+
 # 头文件依赖：改 metro_model.hpp / metro_semantics.hpp 这类公共头时，
 # 所有包含它的目标文件都要重编，否则结构体布局会在不同 .o 之间不一致。
 DEPS := $(OBJS:.o=.d)
 -include $(DEPS)
 
-.PHONY: all gen check test clean svg preview
+.PHONY: all gen check test clean svg preview game game-test
 
 # 生成产物随源码一起清掉，避免残留旧分析器 / 旧模板头。
 all: $(BIN)
@@ -95,6 +108,11 @@ $(GEN)/metro_mapcore.hpp: $(MAPCORE_SRC) $(CURDIR)/tools/embed_mapcore.py
 	@mkdir -p $(GEN)
 	$(PYTHON) $(CURDIR)/tools/embed_mapcore.py --out $@ $(MAPCORE_SRC)
 
+# 游戏资源固化头。数据集的「完整组」开关（--full）不用：页面数据一律现算。
+$(GEN)/metro_game_assets.hpp: $(GAME_SRC) $(CURDIR)/tools/embed_game.py
+	@mkdir -p $(GEN)
+	$(PYTHON) $(CURDIR)/tools/embed_game.py --out $@ $(GAME_SRC)
+
 # 下面这条自检的提示语只能写 ASCII：Windows 上的 mingw32-make 构造命令行时会把
 # 参数按 ANSI(CP936) 转一遍，中文消息里奇数个字节会把紧邻的转义引号吃掉，整条
 # 命令被拆成几段，报 `unexpected EOF while looking for matching '"'`。
@@ -105,7 +123,7 @@ $(GEN)/parser.cpp: $(CURDIR)/metrolang.gram $(CURDIR)/epilogue/metro_parse.cpp $
 	$(PARSER) $(CURDIR)/metrolang.gram --lang cpp17 --out-dir $(GEN)
 	@test -s $(GEN)/parser.cpp || { echo "ParseEngine generation failed - see errors above (old parser.cpp removed)"; exit 1; }
 
-gen: $(GEN)/parser.cpp $(GEN)/metro_templates.hpp $(GEN)/metro_mapcore.hpp
+gen: $(GEN)/parser.cpp $(GEN)/metro_templates.hpp $(GEN)/metro_mapcore.hpp $(GEN)/metro_game_assets.hpp
 
 $(BUILD)/obj/src/%.o: $(CURDIR)/src/%.cpp
 	@mkdir -p $(dir $@)
@@ -129,6 +147,7 @@ $(BUILD)/obj/gen/%.o: $(GEN)/%.cpp
 
 $(BUILD)/obj/src/decompile.o: $(GEN)/metro_templates.hpp
 $(BUILD)/obj/src/html.o: $(GEN)/metro_mapcore.hpp
+$(BUILD)/obj/src/game_html.o: $(GEN)/metro_game_assets.hpp
 
 $(BIN): $(OBJS)
 	$(CXX) $(CXXFLAGS) $(OBJS) -o $@
@@ -149,6 +168,21 @@ preview: $(BUILD)/shenzhen.json
 $(BUILD)/shenzhen.json: $(BIN) $(CURDIR)/samples/shenzhen.m
 	$(BIN) compile $(CURDIR)/samples/shenzhen.m -o $@
 
+# 单文件游戏页：数据集从 .metro 现算并内联，脚本/样式/d3 在构建期内嵌，
+# 产出的 HTML 双击就能玩，也能直接发给别人。
+#
+# 以 $(BIN) 作前置：脚本内嵌在二进制里，改了 game/js 下任何一个文件都必须先重编，
+# 否则会拿旧资源生成页面——改了 ui.js 却看不到变化，排查半天。
+game: $(BIN) $(CURDIR)/samples/guangzhou.m
+	$(BIN) game $(CURDIR)/samples/guangzhou.m -o $(BUILD)/guangzhou-game.html
+	@echo 游戏已生成：$(BUILD)/guangzhou-game.html
+
+# 游戏内核的纯 Node 测试（不依赖浏览器 / jsdom）。
+game-test:
+	node $(CURDIR)/game/test/sim.js
+	node $(CURDIR)/game/test/ui.js
+	$(PYTHON) $(CURDIR)/tests/test_game.py --bin $(BIN)
+
 # Windows 上 make 找不到 sh：优先用 Git Bash / MSYS2 的 bash（与其它独立工程一致）。
 ifeq ($(OS),Windows_NT)
   SH ?= $(firstword $(wildcard C:/PROGRA~1/Git/bin/bash.exe) \
@@ -161,16 +195,20 @@ endif
 check: $(BIN)
 	$(SH) $(CURDIR)/check.sh
 
-# 全部测试。四组互相独立，任何一组失败都让 make 以非零退出：
+# 全部测试。五组互相独立，任何一组失败都让 make 以非零退出：
 #   check.sh      冒烟（编译 / 回环 / HTML / 路线）
 #   mapcore.js    地图内核（浏览器与 C++ 共用的纯函数）
 #   numeric.py    运行时间 / 票价 / 坐标 / 运营参数的口径
 #   lsp.py        hover / definition / documentSymbol / completion
+#   game         模拟内核 + 数据集口径（test_game.py 交叉验证 C++ 与 Python 两条路）
 test: $(BIN)
 	$(SH) $(CURDIR)/check.sh
 	node $(CURDIR)/map_view/test/mapcore.js
 	$(PYTHON) $(CURDIR)/tests/test_numeric.py
 	$(PYTHON) $(CURDIR)/tests/test_lsp.py
+	node $(CURDIR)/game/test/sim.js
+	node $(CURDIR)/game/test/ui.js
+	$(PYTHON) $(CURDIR)/tests/test_game.py --bin $(BIN)
 	@# 查看器 UI 测试要 jsdom（可选依赖）：没装就跳过，不让 make test 变红。
 	$(SH) $(CURDIR)/map_view/run-ui-test.sh
 

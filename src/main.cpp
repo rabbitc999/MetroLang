@@ -1,9 +1,10 @@
 /**
  * @file main.cpp
- * @brief `metro-lang` 命令行：compile / decompile / html / route / coords / check / lsp。
+ * @brief `metro-lang` 命令行：compile / decompile / html / game / route / coords / check / lsp。
  */
 #include "metro_model.hpp"
 
+#include "game_data.hpp"
 #include "lsp.hpp"
 
 #if defined(_WIN32)
@@ -78,6 +79,7 @@ void usage() {
                  "  compile <file.metro> [-o out.json]      编译为 JSON\n"
                  "  decompile <file.json> [-o out.metro]    反编译为 MetroLang\n"
                  "  html <file.metro> [-o out.html]         生成自包含地图\n"
+                 "  game <file.metro> [-o out.html]         生成自包含的线网调度游戏\n"
                  "  route <file.metro> --from A --to B      查询最短时间路径\n"
                  "  coords <file.metro> [--from-coord=gcj]  坐标校正体检（gcj / wgs / auto）\n"
                  "  check <file.metro> [--diagnostics=json] 解析并打印统计；可输出 JSON 诊断\n"
@@ -88,6 +90,9 @@ void usage() {
                  "  --fewer-transfers      优先少换乘\n"
                  "  --no-special           不乘坐特殊线路（机场线 / 磁悬浮等）\n"
                  "  --matrix A B [C ...]   通勤矩阵：这几个站两两之间的耗时\n"
+                 "game 选项：\n"
+                 "  --json                 只导出游戏数据集（metro-game-1）\n"
+                 "  --title \"…\"            页面标题（缺省为「<主城市> 地铁调度」）\n"
                  "coords 选项：--json  输出 JSON\n"
                  "其它：-q 安静；-h 帮助\n";
 }
@@ -202,7 +207,7 @@ int main(int argc, char **argv) {
     if (args.empty() || args[0] == "-h" || args[0] == "--help") { usage(); return args.empty() ? 1 : 0; }
 
     const std::string command = args[0];
-    std::string file, out, from, to, clock, coordFrom = "auto";
+    std::string file, out, from, to, clock, coordFrom = "auto", title;
     bool fewer = false, quiet = false, diagnosticsJson = false, json = false, noSpecial = false;
     std::vector<std::string> matrix;
     for (std::size_t i = 1; i < args.size(); ++i) {
@@ -211,6 +216,7 @@ int main(int argc, char **argv) {
         else if (a == "--from" && i + 1 < args.size()) from = args[++i];
         else if (a == "--to" && i + 1 < args.size()) to = args[++i];
         else if (a == "--time" && i + 1 < args.size()) clock = args[++i];
+        else if (a == "--title" && i + 1 < args.size()) title = args[++i];
         else if (a == "--from-coord" && i + 1 < args.size()) coordFrom = args[++i];
         else if (a.rfind("--from-coord=", 0) == 0) coordFrom = a.substr(13);
         else if (a == "--matrix" && i + 1 < args.size()) {
@@ -230,7 +236,7 @@ int main(int argc, char **argv) {
     if (command == "lsp" || (command == "check" && diagnosticsJson))
         return metro::runLspCommand({}, diagnosticsJson, file);
 
-    if (command == "compile" || command == "decompile" || command == "html" ||
+    if (command == "compile" || command == "decompile" || command == "html" || command == "game" ||
         command == "route" || command == "coords" || command == "check") {
         metro::Program program;
         std::vector<std::string> errors;
@@ -258,6 +264,21 @@ int main(int argc, char **argv) {
             const std::string text = metro::toHtml(program);
             if (out.empty()) std::cout << text;
             else if (!writeFile(out, text)) { std::cerr << "写不了文件：" << out << "\n"; return 1; }
+        } else if (command == "game") {
+            if (metro::writeGame(program, json, out, title) == metro::GameOutput::Failed) {
+                std::cerr << "写不了文件：" << out << "\n";
+                return 1;
+            }
+            if (!quiet && !out.empty()) {
+                // 报数据集里的口径，不是模型全量：模型里还有只在规划段出现的站，
+                // 玩家到不了；两个数不一致会让人以为漏站了。
+                metro::GameStats gs = metro::gameStats(program);
+                std::cerr << "已生成游戏：" << out << "（" << gs.lines << " 条线路，"
+                          << gs.stationsOperating << " 座车站";
+                if (gs.futureSegments)
+                    std::cerr << "，" << gs.futureSegments / 2 << " 段在建";
+                std::cerr << "）\n";
+            }
         } else if (command == "route") {
             metro::RouteOptions options;
             options.preferFewerTransfers = fewer;

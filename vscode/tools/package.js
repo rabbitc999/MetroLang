@@ -99,7 +99,7 @@ function main() {
   fs.mkdirSync(outDir, { recursive: true });
   // Windows 上本地 vsce 是 .cmd，得走 shell 才能被找到。
   const shell = process.platform === 'win32';
-  // README 里有 `../src/lsp.cpp` 这类仓库内相对链接：vsce 认不出 Gitee 仓库，
+  // README 里有 `../src/lsp.cpp` 这类仓库内相对链接：vsce 认不出 Github 仓库，
   // 得显式给 base URL，否则它把链接判成坏链直接失败。
   const base = `${repositoryUrl}/blob/master/vscode`;
   run(command, [...prefix, 'package', '--out', vsix, '--allow-missing-repository',

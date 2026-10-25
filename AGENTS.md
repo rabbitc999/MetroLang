@@ -1,6 +1,6 @@
 # metro-lang —— 代码编写要求与提交要求
 
-本文件是 ParseEngine 仓库 [`AGENTS.md`](https://gitee.com/rabbitc999/ParseEngine) 的副本，
+本文件是 ParseEngine 仓库 [`AGENTS.md`](https://github.com/rabbitc999/ParseEngine) 的副本，
 按 metro-lang 自己的路径、命令与远端改写了其中仓库相关的地方；通用规则（文法、注释、提交）
 两份保持一致。
 
@@ -36,7 +36,7 @@
 7. 反编译用模板化生成；区间/等待/总时间按 [`doc/03-travel-time-model.md`](doc/03-travel-time-model.md)
    的模型。
 8. `doc/README.md` 挂索引；最后 `git add -A` → commit → `git push origin master`
-   （远端 <https://gitee.com/rabbitc999/metro-lang.git>）。
+   （远端 <https://github.com/rabbitc999/metro-lang.git>）。
 
 ## 生成器（ParseEngine）是外部依赖
 
